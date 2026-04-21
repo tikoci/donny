@@ -17,8 +17,8 @@ for (const { id, msg } of db.rawObjects()) {
     const hex = `0x${f.tag.toString(16).padStart(4, "0")}`;
     let val: unknown;
     if (f.val.k === "str") val = JSON.stringify(f.val.v);
-    else if (f.val.k === "bytes") val = `<bytes len=${(f.val.v as Uint8Array).length}>`;
-    else if (f.val.k === "u32arr") val = `[${(f.val.v as number[]).join(",")}]`;
+    else if (f.val.k === "bytes") val = `<bytes len=${f.val.v.length}>`;
+    else if (f.val.k === "u32[]") val = `[${f.val.v.join(",")}]`;
     else val = f.val.v;
     console.log(`  ${hex}  ${f.val.k.padEnd(8)}  ${val}`);
   }

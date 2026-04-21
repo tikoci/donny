@@ -124,8 +124,6 @@ A freshly initialised Dude database (`clean.db` / `clean.export`) contains 224 o
 
 `clean.db` and `clean.export` are committed to the repo (gitignore has `!clean.db` / `!clean.export` exceptions). They contain no PII and are safe to share. Use them in tests to validate both the SQLite and gzip/tar code paths.
 
-
-
 IPv4 addresses are stored as u32 little-endian: `a | (b<<8) | (c<<16) | (d<<24)`. Sentinel `0xFFFFFFFF` means no address (DNS-mode device). `ipv4FromU32` / `ipv4ToU32` handle conversion.
 
 ## DNS-mode Devices

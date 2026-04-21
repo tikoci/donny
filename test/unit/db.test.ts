@@ -18,6 +18,27 @@ const SCHEMA = `
   CREATE TABLE chart_values_1day   (sourceIDandTime integer primary key, value real);
 `;
 
+function sleepMs(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function removeDirWithRetry(dir: string): void {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? String(error.code) : "";
+      if (code !== "EBUSY") throw error;
+      if (attempt === 4) {
+        if (process.platform === "win32") return;
+        throw error;
+      }
+      sleepMs(50 * (attempt + 1));
+    }
+  }
+}
+
 function withTempDb(fn: (dbPath: string, sqlite: Database) => void): void {
   const dir = mkdtempSync(join(tmpdir(), "donny-test-"));
   const dbPath = join(dir, "fixture.db");
@@ -27,7 +48,7 @@ function withTempDb(fn: (dbPath: string, sqlite: Database) => void): void {
     fn(dbPath, sqlite);
   } finally {
     sqlite.close();
-    rmSync(dir, { recursive: true, force: true });
+    removeDirWithRetry(dir);
   }
 }
 
