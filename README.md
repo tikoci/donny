@@ -80,12 +80,13 @@ const blob = encodeDevice({ id: 99, name: "edge-01", address: "10.0.0.1" });
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for Windows-first setup instructions covering PowerShell 7, Bun, VS Code, GitHub Copilot, GitHub Copilot CLI, and optional TypeScript LSP support.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for Windows-first setup instructions covering PowerShell 7, Bun, VS Code, GitHub Copilot, GitHub Copilot CLI, and the repo's TypeScript and RouterOS LSP setup.
 
 For Windows contributors, the repo also includes:
 
 - `scripts\setup-windows.cmd` — bootstrap the local toolchain
 - `scripts\doctor-windows.cmd` — verify the current shell environment
+- `scripts\routeroslsp-launcher.cjs` — bridge the installed RouterOS VS Code extension into Copilot CLI LSP
 - `.vscode\tasks.json` — VS Code tasks for check/test/bootstrap workflows
 
 ## License

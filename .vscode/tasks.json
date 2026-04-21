@@ -29,6 +29,12 @@
       "problemMatcher": []
     },
     {
+      "label": "RouterOS LSP: Probe",
+      "type": "shell",
+      "command": "node scripts\\routeroslsp-launcher.cjs --probe",
+      "problemMatcher": []
+    },
+    {
       "label": "Windows: Bootstrap dev environment",
       "type": "shell",
       "command": "scripts\\setup-windows.cmd",

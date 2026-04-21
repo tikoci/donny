@@ -21,10 +21,16 @@ if errorlevel 1 goto :fail
 call :ensure_pkg "Git" "Git.Git" "winget"
 if errorlevel 1 goto :fail
 
+call :ensure_pkg "GitHub CLI" "GitHub.cli" "winget"
+if errorlevel 1 goto :fail
+
 call :ensure_pkg "Visual Studio Code" "Microsoft.VisualStudioCode" "winget"
 if errorlevel 1 goto :fail
 
 call :ensure_pkg "Bun" "Oven-Bun.Bun" "winget"
+if errorlevel 1 goto :fail
+
+call :ensure_pkg "SQLite CLI" "SQLite.SQLite" "winget"
 if errorlevel 1 goto :fail
 
 call :ensure_pkg "GitHub Copilot CLI" "GitHub.Copilot" "winget"
@@ -45,6 +51,7 @@ if not errorlevel 1 (
   call code --install-extension GitHub.copilot-chat --force
   call code --install-extension biomejs.biome --force
   call code --install-extension ms-vscode.powershell --force
+  call code --install-extension TIKOCI.lsp-routeros-ts --force
 ) else (
   echo.
   echo [warn] code command not found on PATH yet. Reopen your shell after VS Code installs,
@@ -69,6 +76,8 @@ echo Then run:
 echo   scripts\doctor-windows.cmd
 echo   pwsh --version
 echo   bun --version
+echo   gh --version
+echo   sqlite3 --version
 echo   copilot --version
 echo.
 popd >nul 2>&1

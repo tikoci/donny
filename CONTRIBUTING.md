@@ -20,6 +20,7 @@ The bootstrap script installs the baseline tools and VS Code extensions. The doc
 - **Bun** is the runtime and package manager for this repo.
 - **PowerShell 7+** is required for GitHub Copilot CLI on Windows.
 - **Git** and **VS Code** are the expected baseline tools.
+- **GitHub CLI** and **SQLite CLI** are part of the Windows bootstrap because they are commonly useful for GitHub workflows, agent tasks, and direct database inspection.
 - **Node.js is optional** for this repo itself, but useful if you want TypeScript LSP support in Copilot CLI or if you prefer npm-based Copilot CLI installs.
 
 ## 1. Baseline Windows tooling
@@ -43,6 +44,8 @@ If `winget` is missing, update or install **App Installer** first.
 ```powershell
 winget install --id Git.Git -e
 ```
+
+The Windows doctor prefers **Git for Windows** specifically and also checks whether `bash` is available on PATH, since some tooling expects the Git-for-Windows shell.
 
 ### PowerShell 7
 
@@ -74,6 +77,18 @@ If `code` is not on PATH, rerun the VS Code installer and enable the option to a
 
 This repo also includes `.vscode/extensions.json` with recommended extensions and `.vscode/tasks.json` with common Bun workflows plus Windows bootstrap/doctor tasks.
 
+### GitHub CLI
+
+```powershell
+winget install --id GitHub.cli -e
+```
+
+Verify:
+
+```powershell
+gh --version
+```
+
 ### Bun
 
 Preferred on Windows:
@@ -94,12 +109,25 @@ Verify:
 bun --version
 ```
 
+### SQLite CLI
+
+```powershell
+winget install --id SQLite.SQLite -e
+```
+
+Verify:
+
+```powershell
+sqlite3 --version
+```
+
 ## 2. GitHub Copilot in VS Code
 
 Install these extensions in VS Code:
 
 - **GitHub Copilot**
 - **GitHub Copilot Chat**
+- **RouterOS LSP**
 
 Then sign in with the GitHub account that has Copilot access.
 
@@ -136,7 +164,7 @@ On first launch:
 1. Run `/login` if prompted.
 2. Run `/env` to confirm instructions and environment details loaded.
 3. Run `/ide` to connect the current VS Code workspace.
-4. Run `/lsp` after installing `typescript-language-server` if you want repository LSP support in Copilot CLI.
+4. Run `/lsp` after installing the language servers you want to use so Copilot CLI can confirm the repository LSP configuration is active.
 
 ### Alternative install
 
@@ -148,9 +176,37 @@ npm install -g @github/copilot
 
 That path requires **Node.js 22+**, so the WinGet install is simpler on a fresh Windows machine.
 
-## 4. Optional: TypeScript LSP for better Copilot CLI code intelligence
+## 4. LSP servers for Copilot CLI
 
-Copilot CLI supports repository-level LSP configuration, but it does **not** bundle language servers. This repo includes `.github/lsp.json` for TypeScript.
+Copilot CLI supports repository-level LSP configuration, but it does **not** bundle language servers.
+
+This repo configures two LSP servers in `.github/lsp.json`:
+
+- **TypeScript** via `typescript-language-server`
+- **RouterOS** via `scripts/routeroslsp-launcher.cjs`, which discovers the installed **RouterOS LSP** VS Code extension and launches its bundled server
+
+### RouterOS LSP settings reuse
+
+The RouterOS launcher reuses RouterOS settings from:
+
+1. workspace `.vscode/settings.json`
+2. VS Code user settings
+3. environment variables
+
+Supported environment variables:
+
+```text
+ROUTEROSLSP_BASE_URL
+ROUTEROSLSP_USERNAME
+ROUTEROSLSP_PASSWORD
+ROUTEROSLSP_API_TIMEOUT
+ROUTEROSLSP_ALLOW_CLIENT_PROVIDED_CREDENTIALS
+ROUTEROSLSP_CHECK_CERTIFICATES
+```
+
+That lets VS Code and Copilot CLI share the same RouterOS endpoint and credentials without hard-coding secrets in the repository.
+
+### TypeScript LSP
 
 If you want Copilot CLI to use TypeScript LSP features, install **Node.js 22+** (or the current LTS release) and the TypeScript language server:
 
@@ -167,6 +223,28 @@ Then start `copilot` and use:
 ```
 
 You should see the configured TypeScript server for `.ts` files.
+
+### RouterOS LSP
+
+The Windows bootstrap installs the VS Code extension:
+
+```powershell
+code --install-extension TIKOCI.lsp-routeros-ts
+```
+
+You can verify that Copilot CLI can find it with:
+
+```powershell
+node scripts\routeroslsp-launcher.cjs --probe
+```
+
+Then start `copilot` and run:
+
+```text
+/lsp
+```
+
+You should see the configured RouterOS server for `.rsc` and related RouterOS file types.
 
 ## 5. Clone and bootstrap the repo
 

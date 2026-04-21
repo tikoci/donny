@@ -7,6 +7,17 @@
         ".ts": "typescript",
         ".tsx": "typescript"
       }
+    },
+    "routeros": {
+      "command": "node",
+      "args": ["scripts\\routeroslsp-launcher.cjs"],
+      "fileExtensions": {
+        ".rsc": "routeros",
+        ".routeros": "routeros",
+        ".tikbook": "routeros",
+        ".tikbook.rsc": "routeros",
+        ".md.rsc": "routeros"
+      }
     }
   }
 }

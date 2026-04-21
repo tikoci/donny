@@ -43,4 +43,4 @@
 - Tests rely on hand-built byte fixtures in `test/unit/nova.test.ts` for exact TLV behavior, plus committed `clean.db` and `clean.export` fixtures in `test/unit/db.test.ts` to cover both raw SQLite and `export.dude` paths.
 - Real `*.db` files may contain plaintext credentials and IPs. Keep them out of git. `clean.db` and `clean.export` are the safe committed fixtures intended for tests and baseline comparisons.
 - If you change Nova tags, range classification, or object write transactions, keep `DESIGN.md` and `.github/instructions/general.md` in sync with the implementation.
-- Windows-first developer setup now lives in `CONTRIBUTING.md`. Repo-owned VS Code/Copilot helpers live in `.vscode\` and `.github\lsp.json`.
+- Windows-first developer setup now lives in `CONTRIBUTING.md`. Repo-owned VS Code/Copilot helpers live in `.vscode\` and `.github\lsp.json`, with RouterOS LSP launched through `scripts\routeroslsp-launcher.cjs`.

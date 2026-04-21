@@ -3,6 +3,7 @@
     "GitHub.copilot",
     "GitHub.copilot-chat",
     "biomejs.biome",
-    "ms-vscode.powershell"
+    "ms-vscode.powershell",
+    "TIKOCI.lsp-routeros-ts"
   ]
 }
