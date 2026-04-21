@@ -1,0 +1,66 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Check",
+      "type": "shell",
+      "command": "bun run check",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Test: Unit",
+      "type": "shell",
+      "command": "bun test test/unit/",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Test: nova.test.ts",
+      "type": "shell",
+      "command": "bun test test/unit/nova.test.ts",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "CLI: Help",
+      "type": "shell",
+      "command": "bun run src/cli/index.ts --help",
+      "problemMatcher": []
+    },
+    {
+      "label": "Windows: Bootstrap dev environment",
+      "type": "shell",
+      "command": "scripts\\setup-windows.cmd",
+      "windows": {
+        "options": {
+          "shell": {
+            "executable": "cmd.exe",
+            "args": [
+              "/d",
+              "/c"
+            ]
+          }
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Windows: Doctor",
+      "type": "shell",
+      "command": "scripts\\doctor-windows.cmd",
+      "windows": {
+        "options": {
+          "shell": {
+            "executable": "cmd.exe",
+            "args": [
+              "/d",
+              "/c"
+            ]
+          }
+        }
+      },
+      "problemMatcher": []
+    }
+  ]
+}
