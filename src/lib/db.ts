@@ -12,6 +12,7 @@ import {
   encodeProbeConfig,
   encodeService,
   getBool,
+  getField,
   getStr,
   getU32,
   getU32Array,
@@ -63,6 +64,18 @@ function parseMacData(raw: Uint8Array): string[] {
   return macs;
 }
 
+function isDeviceObject(rowId: number, msg: NonNullable<ReturnType<typeof decodeBlob>>): boolean {
+  if (!hasTagInRange(msg, RANGE.DEVICE_LO, RANGE.DEVICE_HI)) return false;
+
+  // Real device objects observed in Dude DBs carry SELF_ID in the continuation
+  // section. Partial fragments can still contain device-range tags, so skip them.
+  if (getU32(msg, TAG.SELF_ID) !== rowId) return false;
+
+  return getField(msg, TAG.DEVICE_IP) !== undefined
+    || getField(msg, TAG.DEVICE_DNS_MODE) !== undefined
+    || getField(msg, TAG.NAME) !== undefined;
+}
+
 /** Open a dude.db file for read/write or read-only access. */
 export class DudeDB {
   private db: Database;
@@ -76,7 +89,7 @@ export class DudeDB {
   /** Open a database file. Pass `readonly: true` to prevent accidental writes. */
   static open(path: string, options: { readonly?: boolean } = {}): DudeDB {
     const readonly = options.readonly ?? false;
-    const db = new Database(path, { readonly });
+    const db = readonly ? new Database(path, { readonly: true }) : new Database(path);
     return new DudeDB(db, readonly);
   }
 
@@ -128,7 +141,7 @@ export class DudeDB {
   devices(): Device[] {
     const out: Device[] = [];
     for (const { id, msg } of this.rawObjects()) {
-      if (!hasTagInRange(msg, RANGE.DEVICE_LO, RANGE.DEVICE_HI)) continue;
+      if (!isDeviceObject(id, msg)) continue;
 
       const ipArr = getU32Array(msg, TAG.DEVICE_IP) ?? [];
       let address = "";

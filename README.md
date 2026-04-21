@@ -18,6 +18,7 @@ bunx @tikoci/donny --help
 
 ```text
 donny                                     interactive wizard
+donny <db>                                interactive wizard for an existing DB
 donny setup                               interactive wizard (explicit)
 donny info <db>                           show database statistics
 donny list devices <db>                   list all devices

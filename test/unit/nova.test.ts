@@ -67,12 +67,14 @@ const IP_DEVICE_BLOB = Uint8Array.from([
   ...str("testhost"),
 ]);
 
-// Minimal DNS-mode device: tag 0x1F41 (empty compound), no IP, name "router.lan"
+// Minimal DNS-mode device: empty interface list + dns_mode=1, no IP, name "router.lan"
 const DNS_DEVICE_BLOB = Uint8Array.from([
   ...MAGIC,
-  ...u32(1), // section 1 count = 1
+  ...u32(2), // section 1 count = 2
   ...u16(0x1f41), M_STD, TC_COMPOUND,
   ...u16(0), // compound count=0
+  ...u16(TAG.DEVICE_DNS_MODE), M_STD, 0x09,
+  0x01,
   ...u16(TAG.SELF_ID), M_ALT, TC_U32,
   ...u32(42),
   ...u16(TAG.NAME), M_ALT, TC_STR,
@@ -117,9 +119,10 @@ describe("decodeBlob", () => {
     expect(hasTagInRange(msg, RANGE.DEVICE_LO, RANGE.DEVICE_HI)).toBeTrue();
   });
 
-  test("decodes DNS-mode device — tag 0x1F41 present", () => {
+  test("decodes DNS-mode device — device tags present", () => {
     const msg = decodeBlob(DNS_DEVICE_BLOB);
     expect(hasTagInRange(must(msg), RANGE.DEVICE_LO, RANGE.DEVICE_HI)).toBeTrue();
+    expect(getU32(must(msg), TAG.DEVICE_DNS_MODE)).toBe(1);
   });
 
   test("decodes DNS-mode device — name as address", () => {
@@ -228,6 +231,7 @@ describe("encode / decode round-trip", () => {
     const msg = must(decodeBlob(blob));
     const ipArr = getU32Array(msg, TAG.DEVICE_IP) ?? [];
     expect(ipArr).toHaveLength(0);
+    expect(getU32(msg, TAG.DEVICE_DNS_MODE)).toBe(1);
     expect(getStr(msg, TAG.NAME)).toBe("gw.example.com");
   });
 
