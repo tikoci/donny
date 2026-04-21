@@ -94,3 +94,97 @@ describe("DudeDB", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Clean-baseline tests — use the committed clean.db / clean.export fixtures
+// which represent a freshly initialised Dude instance with no user data.
+// ---------------------------------------------------------------------------
+
+const CLEAN_DB_PATH     = "clean.db";
+const CLEAN_EXPORT_PATH = "clean.export";
+const CLEAN_OBJECT_COUNT   = 224;
+const CLEAN_PROBE_TPL_COUNT   = 27;
+const CLEAN_DEVICE_TYPE_COUNT = 17;
+const CLEAN_LINK_TYPE_COUNT   =  8;
+
+describe("DudeDB — clean baseline (clean.db / clean.export)", () => {
+  test("openAuto(clean.db) reads the SQLite path", () => {
+    const db = DudeDB.openAuto(CLEAN_DB_PATH, { readonly: true });
+    expect(db.stats().objects).toBe(CLEAN_OBJECT_COUNT);
+    expect(db.devices()).toHaveLength(0);
+    db.close();
+  });
+
+  test("openAuto(clean.export) reads the gzip-tar export path", () => {
+    const db = DudeDB.openAuto(CLEAN_EXPORT_PATH, { readonly: true });
+    expect(db.stats().objects).toBe(CLEAN_OBJECT_COUNT);
+    expect(db.devices()).toHaveLength(0);
+    db.close();
+  });
+
+  test("both formats produce identical object counts", () => {
+    const fromDb     = DudeDB.openAuto(CLEAN_DB_PATH,     { readonly: true });
+    const fromExport = DudeDB.openAuto(CLEAN_EXPORT_PATH, { readonly: true });
+
+    const sDb     = fromDb.stats();
+    const sExport = fromExport.stats();
+
+    expect(sExport.objects).toBe(sDb.objects);
+
+    fromDb.close();
+    fromExport.close();
+  });
+
+  test("clean baseline has the expected builtin probe templates", () => {
+    const db = DudeDB.openAuto(CLEAN_DB_PATH, { readonly: true });
+    const probes = db.probeTemplates();
+
+    expect(probes).toHaveLength(CLEAN_PROBE_TPL_COUNT);
+    expect(probes.every((p) => p.builtIn)).toBe(true);
+
+    const names = probes.map((p) => p.name);
+    expect(names).toContain("ping");
+    expect(names).toContain("routeros management");
+    expect(names).toContain("mikrotik");
+    expect(names).toContain("cpu");
+    expect(names).toContain("disk");
+
+    // Builtin probe IDs occupy the 10159–10190 range
+    const ids = probes.map((p) => p.id);
+    expect(Math.min(...ids)).toBeGreaterThanOrEqual(10159);
+    expect(Math.max(...ids)).toBeLessThanOrEqual(10190);
+
+    db.close();
+  });
+
+  test("clean baseline has the expected builtin device types", () => {
+    const db = DudeDB.openAuto(CLEAN_DB_PATH, { readonly: true });
+    const types = db.deviceTypes();
+
+    expect(types).toHaveLength(CLEAN_DEVICE_TYPE_COUNT);
+    expect(types.every((t) => t.builtIn)).toBe(true);
+
+    const names = types.map((t) => t.name);
+    expect(names).toContain("MikroTik Device");
+    expect(names).toContain("Router");
+    expect(names).toContain("Switch");
+    expect(names).toContain("Some Device");
+
+    db.close();
+  });
+
+  test("clean baseline has the expected builtin link types", () => {
+    const db = DudeDB.openAuto(CLEAN_DB_PATH, { readonly: true });
+    const types = db.linkTypes();
+
+    expect(types).toHaveLength(CLEAN_LINK_TYPE_COUNT);
+    expect(types.every((t) => t.builtIn)).toBe(true);
+
+    const names = types.map((t) => t.name);
+    expect(names).toContain("gigabit ethernet");
+    expect(names).toContain("wireless");
+    expect(names).toContain("some link");
+
+    db.close();
+  });
+});

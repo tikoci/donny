@@ -81,7 +81,7 @@ export async function runCli(argv: string[], isTTY: boolean): Promise<void> {
       const { DudeDB } = await import("../lib/db.ts");
       const { printStats } = await import("./format.ts");
       const dbPath = requireDB(positional);
-      const db = DudeDB.open(dbPath, { readonly: true });
+      const db = DudeDB.openAuto(dbPath, { readonly: true });
       const stats = db.stats();
       console.log(`\n  dude.db: ${dbPath}`);
       printStats(stats);
@@ -93,9 +93,9 @@ export async function runCli(argv: string[], isTTY: boolean): Promise<void> {
     case "list": {
       const sub = argv[1];
       const { DudeDB } = await import("../lib/db.ts");
-      const { printDevices, printProbes } = await import("./format.ts");
+      const { printDevices, printProbes, printDeviceTypes, printLinkTypes, printNetworks, printSyslogRules, printDeviceGroups, printDiscoverJobs } = await import("./format.ts");
       const dbPath = requireDB(positional);
-      const db = DudeDB.open(dbPath, { readonly: true });
+      const db = DudeDB.openAuto(dbPath, { readonly: true });
       switch (sub) {
         case "devices": {
           const devices = db.devices();
@@ -111,8 +111,50 @@ export async function runCli(argv: string[], isTTY: boolean): Promise<void> {
           console.log();
           break;
         }
+        case "device-types": {
+          const types = db.deviceTypes();
+          console.log(`\n  ${types.length} device type(s) in ${dbPath}:\n`);
+          printDeviceTypes(types);
+          console.log();
+          break;
+        }
+        case "link-types": {
+          const types = db.linkTypes();
+          console.log(`\n  ${types.length} link type(s) in ${dbPath}:\n`);
+          printLinkTypes(types);
+          console.log();
+          break;
+        }
+        case "networks": {
+          const nets = db.networks();
+          console.log(`\n  ${nets.length} network(s) in ${dbPath}:\n`);
+          printNetworks(nets);
+          console.log();
+          break;
+        }
+        case "syslog-rules": {
+          const rules = db.syslogRules();
+          console.log(`\n  ${rules.length} syslog rule(s) in ${dbPath}:\n`);
+          printSyslogRules(rules);
+          console.log();
+          break;
+        }
+        case "groups": {
+          const groups = db.deviceGroups();
+          console.log(`\n  ${groups.length} device group(s) in ${dbPath}:\n`);
+          printDeviceGroups(groups);
+          console.log();
+          break;
+        }
+        case "discover": {
+          const jobs = db.discoverJobs();
+          console.log(`\n  ${jobs.length} discovery job(s) in ${dbPath}:\n`);
+          printDiscoverJobs(jobs);
+          console.log();
+          break;
+        }
         default:
-          console.error(`Unknown list subcommand: ${sub ?? "(none)"}\n  Available: devices, probes`);
+          console.error(`Unknown list subcommand: ${sub ?? "(none)"}\n  Available: devices, probes, device-types, link-types, networks, syslog-rules, groups, discover`);
           process.exit(1);
       }
       db.close();
@@ -125,7 +167,7 @@ export async function runCli(argv: string[], isTTY: boolean): Promise<void> {
       const includeCreds = bool(flags, "include-credentials");
       const { DudeDB } = await import("../lib/db.ts");
       const { printDevicesCSV, printDevicesJSON } = await import("./format.ts");
-      const db = DudeDB.open(dbPath, { readonly: true });
+      const db = DudeDB.openAuto(dbPath, { readonly: true });
       const devices = db.devices();
       if (format === "csv") printDevicesCSV(devices, includeCreds);
       else printDevicesJSON(devices, includeCreds);
@@ -176,6 +218,12 @@ Usage:
   donny info <db>                           show database statistics
   donny list devices <db>                   list all devices
   donny list probes <db>                    list probe templates
+  donny list device-types <db>             list device type templates
+  donny list link-types <db>               list link/interface types
+  donny list networks <db>                 list network/subnet groups
+  donny list syslog-rules <db>             list syslog rules
+  donny list groups <db>                   list device groups
+  donny list discover <db>                 list auto-discovery jobs
   donny export <db> [options]               export devices
     --format csv|json                       output format (default: json)
     --include-credentials                   include username/password in output
@@ -187,6 +235,7 @@ Usage:
     --routeros                              flag device as RouterOS
     --snmp                                  enable SNMP monitoring
 
+  <db> accepts both dude.db (SQLite) and export.dude (gzip tar) files.
   donny --help                              show this help
 `);
       process.exit(0);

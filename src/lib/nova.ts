@@ -48,7 +48,29 @@ export const TAG = {
   DEVICE_ROUTER_OS: 0x1f4a,
   DEVICE_SNMP_ENABLED: 0x1f4b,
   DEVICE_SNMP_PROFILE: 0x1f4c,
+  DEVICE_AGENT_ID: 0x1f4d,
+  DEVICE_PARENT_ID: 0x1f4e,
+  DEVICE_AUTO_DISCOVER: 0x1f51,
+  DEVICE_ORDER: 0x1f52,
+  DEVICE_COLOR_OVERRIDE: 0x1f53,
+  DEVICE_SIZE: 0x1f54,
+  DEVICE_INHERIT_PROBES: 0x1f55,
+  DEVICE_EXTRA_SERVICES: 0x1f57,
+  DEVICE_NOTES: 0x1f58,
+  DEVICE_LABEL: 0x1f59,
+  DEVICE_CUSTOM_FIELD: 0x1f5a,
   DEVICE_SERVICES: 0x1f56,
+  // Device type (0x2710–0x2715)
+  DTYPE_DEFAULT_PROBES: 0x2710,
+  DTYPE_ALL_PROBES: 0x2711,
+  DTYPE_SNMP_PROBES: 0x2712,
+  DTYPE_ICON_ID: 0x2713,
+  DTYPE_POLL_INTERVAL: 0x2714,
+  DTYPE_MANAGE_URL: 0x2715,
+  // Network/subnet group (0x2AF8–0x2AFA)
+  NETWORK_SUBNETS: 0x2af8,
+  NETWORK_MAP_ID: 0x2af9,
+  NETWORK_NEXT_ID: 0x2afa,
   // Probe config (0x2EE0–0x2EF4)
   PROBE_ENABLED: 0x2ee0,
   PROBE_DEVICE_ID: 0x2ee1,
@@ -84,9 +106,50 @@ export const TAG = {
   // SNMP profile (0x3C68–0x3C72)
   SNMP_VERSION: 0x3c68,
   SNMP_PORT: 0x3c6a,
+  // Note/annotation (0x5208–0x5209)
+  NOTE_PARENT_ID: 0x5208,
+  NOTE_TIMESTAMP: 0x5209,
+  // Link type (0x59D8–0x59DB)
+  LTYPE_CATEGORY: 0x59d8,
+  LTYPE_STYLE: 0x59d9,
+  LTYPE_IFTYPE: 0x59da,
+  LTYPE_SPEED: 0x59db,
   // Tool (0x7530–0x7533)
   TOOL_PARENT: 0x7531,
   TOOL_KIND: 0x7530,
+  // Syslog rule (0x1770–0x1779)
+  SYSLOG_ENABLED: 0x1770,
+  SYSLOG_IP_FILTER: 0x1771,
+  SYSLOG_IP_MASK: 0x1772,
+  SYSLOG_PATTERN: 0x1773,
+  SYSLOG_INVERT: 0x1774,
+  SYSLOG_ACTION: 0x1778,
+  SYSLOG_NOTIFICATION_ID: 0x1779,
+  // Active session (0x4E20–0x4E23)
+  SESSION_PANEL_ID: 0x4e20,
+  SESSION_USERNAME: 0x4e21,
+  // Open panel (0x4A38–0x4A3F)
+  PANEL_SESSION_ID: 0x4a38,
+  PANEL_MAP_ID: 0x4a3e,
+  // Chart item (0x07D0–0x07D1)
+  PANEL_ELEM_TYPE: 0x07d0,
+  // Chart line (0xC350–0xC356)
+  CHARTLINE_CHART_ID: 0xc350,
+  CHARTLINE_SERVICE_ID: 0xc351,
+  // Custom function (0xCB20–0xCB25)
+  CUSTFN_CODE: 0xcb21,
+  CUSTFN_DESC: 0xcb22,
+  // Device group (0x2328)
+  GROUP_MEMBERS: 0x2328,
+  // Auto-discovery job (0x6590–0x65AD)
+  DISCOVER_PROBE_TPLS: 0x65a0,  // u32[] — probe template IDs to apply
+  DISCOVER_EXCLUDE_IDS: 0x65a1, // u32[] — device IDs to exclude
+  DISCOVER_INCLUDE_IDS: 0x6590, // u32[] — explicit IDs to include
+  DISCOVER_NETWORK: 0x659a,     // LE u32 — target network IPv4 address
+  DISCOVER_SEED_IP: 0x65ad,     // str   — seed/gateway IP (may be empty)
+  DISCOVER_CANVAS_ID: 0x6598,   // u32   — destination canvas/map ID
+  DISCOVER_INTERVAL: 0x659b,    // u32   — scan interval in seconds
+  DISCOVER_ENABLED: 0x659f,     // bool
 } as const;
 
 /** Tag range boundaries for object classification. */
@@ -113,6 +176,35 @@ export const RANGE = {
   TOOL_HI: 0x7533,
   ASSET_LO: 0x697a,
   ASSET_HI: 0x697a,
+  // Newly decoded ranges
+  SETTINGS_LO: 0x0fa0,
+  SETTINGS_HI: 0x1018,
+  SYSLOG_RULE_LO: 0x1770,
+  SYSLOG_RULE_HI: 0x1779,
+  DEVICE_TYPE_LO: 0x2710,
+  DEVICE_TYPE_HI: 0x2715,
+  NETWORK_LO: 0x2af8,
+  NETWORK_HI: 0x2afa,
+  NOTE_LO: 0x5208,
+  NOTE_HI: 0x5209,
+  LINK_TYPE_LO: 0x59d8,
+  LINK_TYPE_HI: 0x59db,
+  OPEN_PANEL_LO: 0x4a38,
+  OPEN_PANEL_HI: 0x4a3f,
+  ACTIVE_SESSION_LO: 0x4e20,
+  ACTIVE_SESSION_HI: 0x4e23,
+  CHART_ITEM_LO: 0x07d0,
+  CHART_ITEM_HI: 0x07d1,
+  CHART_LINE_LO: 0xc350,
+  CHART_LINE_HI: 0xc356,
+  CUSTOM_FN_LO: 0xcb20,
+  CUSTOM_FN_HI: 0xcb25,
+  // Device group (0x2328)
+  GROUP_LO: 0x2328,
+  GROUP_HI: 0x2328,
+  // Auto-discovery job (0x6590–0x65AD)
+  DISCOVER_LO: 0x6590,
+  DISCOVER_HI: 0x65ad,
 } as const;
 
 /** The decoded value of a single Nova field. */
@@ -317,6 +409,12 @@ export function getBool(msg: NovaMessage, tag: number): boolean | undefined {
 export function getU32Array(msg: NovaMessage, tag: number): number[] | undefined {
   const f = getField(msg, tag);
   return f?.val.k === "u32[]" ? f.val.v : undefined;
+}
+
+/** Get the u64 value of a tag, or undefined. */
+export function getU64(msg: NovaMessage, tag: number): bigint | undefined {
+  const f = getField(msg, tag);
+  return f?.val.k === "u64" ? f.val.v : undefined;
 }
 
 /** True if any field's tag falls within [lo, hi] inclusive. */
@@ -599,6 +697,7 @@ const BUILTIN_PROBE_NAMES = new Set([
   "imap4",
   "printer",
   "routeros management",
+  "dns",
   "dns to mikrotik",
   "mikrotik",
   "windows",

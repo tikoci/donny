@@ -5,6 +5,9 @@
  * All blob encoding/decoding is handled by the Nova Message codec in nova.ts.
  */
 
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import {
   decodeBlob,
@@ -16,6 +19,7 @@ import {
   getStr,
   getU32,
   getU32Array,
+  getU64,
   hasTagInRange,
   ipv4FromU32,
   isBuiltInProbeName,
@@ -27,12 +31,18 @@ import type {
   AddDeviceOptions,
   DbStats,
   Device,
+  DeviceGroup,
+  DeviceType,
+  DiscoverJob,
   DudeMap,
+  LinkType,
   MetricPoint,
+  Network,
   Outage,
   ProbeConfig,
   ProbeTemplate,
   Service,
+  SyslogRule,
 } from "./types.ts";
 
 interface ObjRow {
@@ -80,10 +90,12 @@ function isDeviceObject(rowId: number, msg: NonNullable<ReturnType<typeof decode
 export class DudeDB {
   private db: Database;
   private isReadonly: boolean;
+  private _tempDir?: string;
 
-  private constructor(db: Database, isReadonly: boolean) {
+  private constructor(db: Database, isReadonly: boolean, tempDir?: string) {
     this.db = db;
     this.isReadonly = isReadonly;
+    this._tempDir = tempDir;
   }
 
   /** Open a database file. Pass `readonly: true` to prevent accidental writes. */
@@ -91,6 +103,42 @@ export class DudeDB {
     const readonly = options.readonly ?? false;
     const db = readonly ? new Database(path, { readonly: true }) : new Database(path);
     return new DudeDB(db, readonly);
+  }
+
+  /**
+   * Open either a raw `dude.db` SQLite file or an `export.dude` archive.
+   *
+   * `export.dude` is the file produced by The Dude's `/dude/export-db` command.
+   * It is a gzip-compressed POSIX tar archive containing a single `dude.db` file.
+   * This method detects the gzip magic header, decompresses, strips the 512-byte
+   * tar header, and opens the embedded SQLite data as an in-memory database.
+   *
+   * Raw `.db` files are opened directly with the normal `open()` path.
+   */
+  static openAuto(path: string, options: { readonly?: boolean } = {}): DudeDB {
+    const readonly = options.readonly ?? false;
+    const bytes = new Uint8Array(readFileSync(path));
+
+    // gzip magic: 0x1F 0x8B
+    if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
+      const decompressed = Bun.gunzipSync(bytes);
+      // TAR header: file size is a 12-byte null-terminated octal string at offset 124
+      const sizeField = new TextDecoder().decode(decompressed.slice(124, 136)).replace(/\0/g, "").trim();
+      const fileSize = Number.parseInt(sizeField, 8);
+      if (Number.isNaN(fileSize) || fileSize <= 0) {
+        throw new Error("export.dude: could not parse tar header file size");
+      }
+      const sqliteBytes = decompressed.slice(512, 512 + fileSize);
+      // Database.deserialize is unreliable in some Bun versions; write to a
+      // temporary file and open it normally. The temp dir is cleaned up on close().
+      const tempDir = mkdtempSync(join(tmpdir(), "donny-"));
+      const tempPath = join(tempDir, "dude.db");
+      writeFileSync(tempPath, sqliteBytes);
+      const db = readonly ? new Database(tempPath, { readonly: true }) : new Database(tempPath);
+      return new DudeDB(db, readonly, tempDir);
+    }
+
+    return DudeDB.open(path, options);
   }
 
   /** Create an empty in-memory database with the dude.db schema (useful for tests). */
@@ -113,6 +161,10 @@ export class DudeDB {
 
   close() {
     this.db.close();
+    if (this._tempDir) {
+      try { rmSync(this._tempDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+      this._tempDir = undefined;
+    }
   }
 
   /** Row counts for each table. */
@@ -233,6 +285,121 @@ export class DudeDB {
     for (const { id, msg } of this.rawObjects()) {
       if (!hasTagInRange(msg, RANGE.CANVAS_LO, RANGE.CANVAS_HI)) continue;
       out.push({ id, name: getStr(msg, TAG.NAME) ?? `map-${id}` });
+    }
+    return out;
+  }
+
+  /** All device type templates (built-in and custom). */
+  deviceTypes(): DeviceType[] {
+    const out: DeviceType[] = [];
+    for (const { id, msg } of this.rawObjects()) {
+      if (!hasTagInRange(msg, RANGE.DEVICE_TYPE_LO, RANGE.DEVICE_TYPE_HI)) continue;
+      const iconRaw = getU32(msg, TAG.DTYPE_ICON_ID);
+      out.push({
+        id,
+        name: getStr(msg, TAG.NAME) ?? "",
+        defaultProbeIds: getU32Array(msg, TAG.DTYPE_DEFAULT_PROBES) ?? [],
+        iconId: iconRaw === 0xffffffff ? undefined : iconRaw,
+        manageUrl: getStr(msg, TAG.DTYPE_MANAGE_URL) || undefined,
+        builtIn: getU32(msg, TAG.SELF_ID) !== undefined && id < 20000,
+      });
+    }
+    return out;
+  }
+
+  /** All link/interface type definitions (built-in and custom). */
+  linkTypes(): LinkType[] {
+    const out: LinkType[] = [];
+    for (const { id, msg } of this.rawObjects()) {
+      if (!hasTagInRange(msg, RANGE.LINK_TYPE_LO, RANGE.LINK_TYPE_HI)) continue;
+      const ifTypeRaw = getU32(msg, TAG.LTYPE_IFTYPE);
+      out.push({
+        id,
+        name: getStr(msg, TAG.NAME) ?? "",
+        category: getU32(msg, TAG.LTYPE_CATEGORY) ?? 0,
+        ifType: ifTypeRaw === 0xffffffff ? undefined : ifTypeRaw,
+        speedBps: getU64(msg, TAG.LTYPE_SPEED) ?? 0n,
+        builtIn: id < 20000,
+      });
+    }
+    return out;
+  }
+
+  /** All network/subnet group definitions. */
+  networks(): Network[] {
+    const out: Network[] = [];
+    for (const { id, msg } of this.rawObjects()) {
+      if (!hasTagInRange(msg, RANGE.NETWORK_LO, RANGE.NETWORK_HI)) continue;
+      const subnetPairs = getU32Array(msg, TAG.NETWORK_SUBNETS) ?? [];
+      const subnets: string[] = [];
+      for (let i = 0; i + 1 < subnetPairs.length; i += 2) {
+        const ip = ipv4FromU32(subnetPairs[i] ?? 0);
+        const mask = subnetPairs[i + 1];
+        if (ip && mask !== undefined && mask !== 0xffffffff) {
+          // Mask is stored as prefix length or full mask — count bits
+          const bits = mask === 0 ? 0 : 32 - Math.clz32(mask === 0xffffffff ? 0 : ~mask >>> 0);
+          subnets.push(`${ip}/${bits}`);
+        }
+      }
+      const mapRaw = getU32(msg, TAG.NETWORK_MAP_ID);
+      out.push({
+        id,
+        name: getStr(msg, TAG.NAME) ?? "",
+        subnets,
+        mapId: mapRaw === 0xffffffff ? undefined : mapRaw,
+      });
+    }
+    return out;
+  }
+
+  /** All syslog rules. */
+  syslogRules(): SyslogRule[] {
+    const out: SyslogRule[] = [];
+    for (const { id, msg } of this.rawObjects()) {
+      if (!hasTagInRange(msg, RANGE.SYSLOG_RULE_LO, RANGE.SYSLOG_RULE_HI)) continue;
+      const notifRaw = getU32(msg, TAG.SYSLOG_NOTIFICATION_ID);
+      out.push({
+        id,
+        name: getStr(msg, TAG.NAME) ?? "",
+        enabled: getBool(msg, TAG.SYSLOG_ENABLED) ?? true,
+        pattern: getStr(msg, TAG.SYSLOG_PATTERN) ?? "",
+        action: getU32(msg, TAG.SYSLOG_ACTION) ?? 0,
+        notificationId: notifRaw === 0xffffffff ? undefined : notifRaw,
+      });
+    }
+    return out;
+  }
+
+  /** Named device groups (collections of device IDs, range 0x2328). */
+  deviceGroups(): DeviceGroup[] {
+    const out: DeviceGroup[] = [];
+    for (const { id, msg } of this.rawObjects()) {
+      if (!hasTagInRange(msg, RANGE.GROUP_LO, RANGE.GROUP_HI)) continue;
+      out.push({
+        id,
+        name: getStr(msg, TAG.NAME) ?? "",
+        memberIds: getU32Array(msg, TAG.GROUP_MEMBERS) ?? [],
+      });
+    }
+    return out;
+  }
+
+  /** Auto-discovery job records (range 0x6590–0x65AD). */
+  discoverJobs(): DiscoverJob[] {
+    const out: DiscoverJob[] = [];
+    for (const { id, msg } of this.rawObjects()) {
+      if (!hasTagInRange(msg, RANGE.DISCOVER_LO, RANGE.DISCOVER_HI)) continue;
+      const netRaw = getU32(msg, TAG.DISCOVER_NETWORK);
+      out.push({
+        id,
+        name: getStr(msg, TAG.NAME) ?? "",
+        network: netRaw !== undefined && netRaw !== 0xffffffff ? ipv4FromU32(netRaw) : undefined,
+        seedIp: getStr(msg, TAG.DISCOVER_SEED_IP) ?? "",
+        canvasId: getU32(msg, TAG.DISCOVER_CANVAS_ID),
+        intervalSecs: getU32(msg, TAG.DISCOVER_INTERVAL) ?? 3600,
+        probeTemplateIds: getU32Array(msg, TAG.DISCOVER_PROBE_TPLS) ?? [],
+        enabled: getBool(msg, TAG.DISCOVER_ENABLED) ?? true,
+      });
     }
     return out;
   }

@@ -107,3 +107,77 @@ export interface ExportOptions {
   type: "devices" | "probes" | "services" | "maps" | "all";
   includeCredentials?: boolean;
 }
+
+/** A Dude device type template (defines known device categories). */
+export interface DeviceType {
+  id: number;
+  name: string;
+  /** Default probe type IDs assigned when this device type is selected. */
+  defaultProbeIds: number[];
+  /** Icon ID from the asset table, or undefined for no icon. */
+  iconId?: number;
+  /** Manage URL template string. */
+  manageUrl?: string;
+  builtIn: boolean;
+}
+
+/** A link/interface type definition. */
+export interface LinkType {
+  id: number;
+  name: string;
+  /** 0=ethernet, 1=vlan, 2=point-to-point, 3=wireless */
+  category: number;
+  /** SNMP ifType integer (e.g. 6=ethernet, 135=vlan, 23=ppp). */
+  ifType?: number;
+  /** Rated speed in bits per second, 0 if unspecified. */
+  speedBps: bigint;
+  builtIn: boolean;
+}
+
+/** A network/subnet group. */
+export interface Network {
+  id: number;
+  name: string;
+  /** CIDR subnet strings in this network group. */
+  subnets: string[];
+  mapId?: number;
+}
+
+/** A syslog rule for routing/filtering Dude syslog messages. */
+export interface SyslogRule {
+  id: number;
+  name: string;
+  enabled: boolean;
+  pattern: string;
+  /** Action: 0=notify, 1=log, 2=ignore, etc. */
+  action: number;
+  notificationId?: number;
+}
+
+/** A named collection of device IDs for bulk operations (group tag 0x2328). */
+export interface DeviceGroup {
+  id: number;
+  name: string;
+  memberIds: number[];
+}
+
+/**
+ * An auto-discovery job record ("Discover Info" objects, range 0x6590–0x65AD).
+ * Each record represents one scheduled network scan configuration.
+ */
+export interface DiscoverJob {
+  id: number;
+  name: string;
+  /** Target network IPv4 address (LE u32 decoded). */
+  network?: string;
+  /** Seed/gateway IP string (may be empty). */
+  seedIp: string;
+  /** Destination canvas/map ID where discovered nodes are placed. */
+  canvasId?: number;
+  /** Scan interval in seconds (default 3600). */
+  intervalSecs: number;
+  /** Probe template IDs to apply to newly discovered devices. */
+  probeTemplateIds: number[];
+  enabled: boolean;
+}
+

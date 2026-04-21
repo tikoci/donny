@@ -2,7 +2,7 @@
  * Output formatting helpers for the donny CLI.
  */
 
-import type { Device, DbStats, ProbeTemplate } from "../lib/types.ts";
+import type { Device, DbStats, ProbeTemplate, DeviceType, LinkType, Network, SyslogRule, DeviceGroup, DiscoverJob } from "../lib/types.ts";
 
 /** Print a two-column key/value table. */
 export function printKV(pairs: [string, string | number | boolean | undefined][]): void {
@@ -98,6 +98,92 @@ export function bold(s: string): string {
   return `\x1b[1m${s}\x1b[0m`;
 }
 
+/** Print device type templates as a table. */
+export function printDeviceTypes(types: DeviceType[]): void {
+  printTable(
+    types.map((t) => ({
+      id: t.id,
+      name: t.name,
+      defaultProbes: t.defaultProbeIds.slice(0, 3).join(",") + (t.defaultProbeIds.length > 3 ? "…" : ""),
+      builtin: t.builtIn ? "yes" : "no",
+    })),
+    ["id", "name", "defaultProbes", "builtin"],
+  );
+}
+
+/** Print link type definitions as a table. */
+export function printLinkTypes(types: LinkType[]): void {
+  const CATEGORY = ["ethernet", "vlan", "point-to-point", "wireless"];
+  printTable(
+    types.map((t) => ({
+      id: t.id,
+      name: t.name,
+      category: CATEGORY[t.category] ?? String(t.category),
+      ifType: t.ifType ?? "",
+      speed: t.speedBps > 0n ? `${(t.speedBps / 1_000_000n).toString()}M` : "",
+      builtin: t.builtIn ? "yes" : "no",
+    })),
+    ["id", "name", "category", "ifType", "speed", "builtin"],
+  );
+}
+
+/** Print network/subnet groups as a table. */
+export function printNetworks(nets: Network[]): void {
+  printTable(
+    nets.map((n) => ({
+      id: n.id,
+      name: n.name,
+      subnets: n.subnets.join(", ") || "(none)",
+      mapId: n.mapId ?? "",
+    })),
+    ["id", "name", "subnets", "mapId"],
+  );
+}
+
+/** Print syslog rules as a table. */
+export function printSyslogRules(rules: SyslogRule[]): void {
+  const ACTION = ["notify", "log", "ignore"];
+  printTable(
+    rules.map((r) => ({
+      id: r.id,
+      name: r.name || "(default)",
+      enabled: r.enabled ? "yes" : "no",
+      action: ACTION[r.action] ?? String(r.action),
+      pattern: r.pattern || "(any)",
+    })),
+    ["id", "name", "enabled", "action", "pattern"],
+  );
+}
+
 export function dim(s: string): string {
   return `\x1b[2m${s}\x1b[0m`;
+}
+
+/** Print device groups as a table. */
+export function printDeviceGroups(groups: DeviceGroup[]): void {
+  printTable(
+    groups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      members: g.memberIds.length,
+      memberIds: g.memberIds.slice(0, 5).join(",") + (g.memberIds.length > 5 ? "\u2026" : ""),
+    })),
+    ["id", "name", "members", "memberIds"],
+  );
+}
+
+/** Print auto-discovery jobs as a table. */
+export function printDiscoverJobs(jobs: DiscoverJob[]): void {
+  printTable(
+    jobs.map((j) => ({
+      id: j.id,
+      name: j.name,
+      network: j.network ?? "",
+      seedIp: j.seedIp || "(none)",
+      interval: `${j.intervalSecs}s`,
+      canvasId: j.canvasId ?? "",
+      enabled: j.enabled ? "yes" : "no",
+    })),
+    ["id", "name", "network", "seedIp", "interval", "canvasId", "enabled"],
+  );
 }

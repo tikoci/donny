@@ -47,6 +47,7 @@ export {
   ipv4FromU32,
   ipv4ToU32,
   isBuiltInProbeName,
+  getU64,
   PROBE_ID_PING,
   NovaWriter,
 } from "./lib/nova.ts";
@@ -63,6 +64,12 @@ export type {
   Outage,
   MetricPoint,
   ExportOptions,
+  DeviceType,
+  LinkType,
+  Network,
+  SyslogRule,
+  DeviceGroup,
+  DiscoverJob,
 } from "./lib/types.ts";
 
 // Nova codec types

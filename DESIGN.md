@@ -70,19 +70,61 @@ The leading tag in the section-1 fields identifies the object type:
 
 | Range | Object type | Notes |
 |-------|-------------|-------|
+| `0x07D0–0x07D1` | Chart item | |
+| `0x0FA0–0x1018` | Settings | single object per database (id=10000) |
+| `0x1770–0x1779` | Syslog rule | |
 | `0x1F40–0x1F5A` | Device | |
+| `0x2328` | Device group | |
+| `0x2710–0x2715` | Device type | |
+| `0x2AF8–0x2AFA` | Network | |
 | `0x2EE0–0x2EF4` | Probe config | |
 | `0x36B0–0x36D1` | Probe template | |
 | `0x3C68–0x3C72` | SNMP profile | |
 | `0x3E80–0x3E9B` | Notification | `0x3E9A` = 16-byte reserved-zero padding (tcode `0x18`) |
+| `0x4A38–0x4A3F` | Open panel | |
+| `0x4E20–0x4E23` | Active session | ephemeral; absent in offline databases |
+| `0x5208–0x5209` | Note | |
 | `0x55F0–0x55F9` | Topology link/edge | `0x55F1` (device_a_id), `0x55F4/5` (device_b_id) |
+| `0x59D8–0x59DB` | Link type | |
 | `0x5DC0–0x5DDF` | Map node placement | `0x5DC0` (map_id), `0x5DC4` (device_id), `0x5DC5/6` (x/y px) |
 | `0x61A8–0x61FA` | Map canvas container | 85 fields: background, grid, palettes, label templates, font blobs |
-| `0x6978–0x697A` | File asset | fonts, icons, certs — filter when enumerating user objects |
+| `0x6590–0x65AD` | Discovery job | `0x659A` = network subnet as LE u32 broadcast address |
+| `0x697A` | File asset | fonts, icons, certs — filter when enumerating user objects |
 | `0x7530–0x7533` | Tool | |
 | `0xBF68–0xBF71` | Service | |
+| `0xC350–0xC356` | Chart line | |
+| `0xCB20–0xCB25` | Custom function | |
 
-## IPv4 Encoding
+## export.dude Format
+
+The Dude's built-in backup is a gzip-compressed tar archive containing a single `dude.db` SQLite file:
+
+- **Detection**: bytes 0–1 are `0x1F 0x8B` (gzip magic).
+- **Structure**: After `Bun.gunzipSync()`, the result is a standard 512-byte POSIX tar block. The file size is an octal string at offset 124 (12 bytes, null-terminated). The SQLite file data starts at byte 512.
+- **Opening**: `DudeDB.openAuto(path)` detects the magic, decompresses, extracts the SQLite payload to a temp file (`mkdtempSync`), opens it, and deletes it on `db.close()`.
+
+## Builtin Objects (Clean Database)
+
+A freshly initialised Dude database (`clean.db` / `clean.export`) contains 224 objects — all builtin, no user data:
+
+| Type | Count | ID range |
+|------|-------|----------|
+| Settings | 1 | 10000 |
+| Probe templates | 27 | 10159–10190 (ping=10159, disk=10190) |
+| Device types | 17 | 10191–10207 (MikroTik Device=10191, Some Device=10207) |
+| Link types | 8 | 10208–10215 (10g ethernet=10208, some link=10215) |
+| Syslog rule | 1 | 10221 (name="(default)", enabled, action=notify) |
+| Assets | 142 | built-in icons and fonts |
+| Notes | 5 | built-in welcome notes |
+| Notifications | 5 | built-in alerts |
+| SNMP profiles | 3 | built-in community strings |
+| Tools | 12 | built-in ping/traceroute/etc tools |
+| Chart items | 2 | built-in chart layouts |
+| Open panels | 1 | built-in panel definition |
+
+`clean.db` and `clean.export` are committed to the repo (gitignore has `!clean.db` / `!clean.export` exceptions). They contain no PII and are safe to share. Use them in tests to validate both the SQLite and gzip/tar code paths.
+
+
 
 IPv4 addresses are stored as u32 little-endian: `a | (b<<8) | (c<<16) | (d<<24)`. Sentinel `0xFFFFFFFF` means no address (DNS-mode device). `ipv4FromU32` / `ipv4ToU32` handle conversion.
 

@@ -26,6 +26,8 @@ applyTo: "**"
 - Marker `0x11` (compact) = always exactly 1 payload byte regardless of tcode.
 - Magic: `4D 32 01 00 FF 88 01 00`. Every blob starts with this.
 - IPv4 stored as u32 LE. Sentinel `0xFFFFFFFF` = no address (DNS-mode device).
+- Builtin probe name `"dns"` (ID 10174) is in `BUILTIN_PROBE_NAMES` — distinct from user-renamed variants.
+- Object type is classified by tag range (see DESIGN.md). All ranges are in `RANGE` in `nova.ts`.
 
 ## Style
 
