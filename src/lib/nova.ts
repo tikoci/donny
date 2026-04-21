@@ -65,8 +65,16 @@ export const TAG = {
   SVC_UNIT: 0xbf6a,
   SVC_TIMEOUT: 0xbf6f,
   SVC_INTERVAL: 0xbf71,
-  // Map (0x3E80–0x3E9B)
-  MAP_ENABLED: 0x3e80,
+  // Notification (0x3E80–0x3E9B)
+  NOTIF_ENABLED: 0x3e80,
+  NOTIF_PADDING: 0x3e9a, // tcode 0x18 — 16-byte reserved-zero padding
+  // Map node placement (0x5DC0–0x5DDF)
+  NODE_MAP_ID: 0x5dc0,
+  NODE_DEVICE_ID: 0x5dc4,
+  NODE_X: 0x5dc5,
+  NODE_Y: 0x5dc6,
+  // Map canvas container (0x61A8–0x61FA)
+  CANVAS_LO_TAG: 0x61a8,
   // Link (0x55F0–0x55F9)
   LINK_TYPE: 0x55f0,
   LINK_DEVICE_A: 0x55f1,
@@ -91,8 +99,12 @@ export const RANGE = {
   PROBE_TEMPLATE_HI: 0x36d1,
   SERVICE_LO: 0xbf68,
   SERVICE_HI: 0xbf71,
-  MAP_LO: 0x3e80,
-  MAP_HI: 0x3e9b,
+  NOTIF_LO: 0x3e80,
+  NOTIF_HI: 0x3e9b,
+  NODE_LO: 0x5dc0,
+  NODE_HI: 0x5ddf,
+  CANVAS_LO: 0x61a8,
+  CANVAS_HI: 0x61fa,
   LINK_LO: 0x55f0,
   LINK_HI: 0x55f9,
   SNMP_LO: 0x3c68,

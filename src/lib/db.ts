@@ -231,7 +231,7 @@ export class DudeDB {
   maps(): DudeMap[] {
     const out: DudeMap[] = [];
     for (const { id, msg } of this.rawObjects()) {
-      if (!hasTagInRange(msg, RANGE.MAP_LO, RANGE.MAP_HI)) continue;
+      if (!hasTagInRange(msg, RANGE.CANVAS_LO, RANGE.CANVAS_HI)) continue;
       out.push({ id, name: getStr(msg, TAG.NAME) ?? `map-${id}` });
     }
     return out;

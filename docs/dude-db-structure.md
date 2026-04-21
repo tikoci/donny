@@ -105,6 +105,8 @@ TAG (2 bytes LE)  MARKER (1 byte)  TCODE (1 byte)  VALUE (variable)
 | `0x08` | u32 | 4 bytes LE |
 | `0x09` | u8 | 1 byte — **NOT 4 bytes** |
 | `0x10` | u64 | 8 bytes LE |
+| `0x18` | bytes_16 | fixed 16 bytes (reserved-zero padding in notification objects) |
+| `0x20` | bytes_4 | fixed 4 bytes (rare fixed-width fields) |
 | `0x21` | string | 1-byte length prefix + UTF-8 bytes |
 | `0x31` | bytes | 1-byte length prefix + raw bytes |
 | `0x88` | u32_array | 2-byte count + count × 4 bytes LE |
@@ -134,9 +136,10 @@ The leading tag in the section-1 fields identifies the object type:
 | `0x2EE0`–`0x2EF4` | Probe config | `0x2EE1` (device_id), `0x2EE3` (type_id), `0x2EEC` (service_id) |
 | `0x36B0`–`0x36D1` | Probe template | `0x36B0` (probe_kind), `0x36B4` (packet_size) |
 | `0xBF68`–`0xBF71` | Service | `0xBF6A` (unit), `0xBF71` (interval) |
-| `0x3E80`–`0x3E9B` | Map | `0x61A9` (node size) |
+| `0x3E80`–`0x3E9B` | Notification | popup/flash/beep/log/syslog/Telegram; `0x3E9A` = `0x18` padding |
 | `0x55F0`–`0x55F9` | Topology link/edge | `0x55F1` (device_a_id), `0x55F4/5` (device_b_id) |
 | `0x5DC0`–`0x5DDF` | Map node placement | `0x5DC0` (map_id), `0x5DC4` (device_id), `0x5DC5/6` (x/y) |
+| `0x61A8`–`0x61FA` | Map canvas container | 85 fields: bg color, grid, 5-color node palette, 6-color link palette, 4 label templates, 5 font blobs, subnet refs |
 | `0x697A` | File asset | `0x697A` (parent_dir_id) — filter these out |
 
 ### File Assets
@@ -278,3 +281,44 @@ Devices with a hostname instead of an IP:
 
 Built-in tool IDs 10004–10015 (Ping, Traceroute, Snmpwalk, etc.) and file
 asset IDs starting at ~10016 should be excluded when listing user objects.
+
+---
+
+## Map Node Placement Fields
+
+Tags `0x5DC0`–`0x5DDF`. Each object = one device placed on a map canvas.
+
+| Tag | Name | Type | Notes |
+|-----|------|------|-------|
+| `0x5DC0` | parent_map_id | u32 | ID of the canvas this node belongs to |
+| `0x5DC4` | device_id | u32 | ID of the device being placed |
+| `0x5DC5` | x_px | u8 or u32 | X pixel on canvas — tcode `0x09` when <256, `0x08` when ≥256 |
+| `0x5DC6` | y_px | u8 or u32 | Y pixel on canvas — same variable-width rule |
+| `0x5DD2` | color_normal | bytes | Node color in normal state |
+| `0x5DD3` | color_warn | bytes | Node color in warning state |
+| `0x5DD4` | color_error | bytes | Node color in error state |
+| `0x5DD5` | color_bg | bytes | Background color |
+| `0x5DD6` | color_selected | bytes | Selected-state color |
+| `0x5DD8` | icon_font_blob | bytes | Icon + font serialization blob — copy verbatim from an existing node |
+| `0x0010` | name | str | Label template override (optional) |
+
+**Write-path** — to add a device to a map:
+1. Create an object in range `0x5DC0`–`0x5DDF`
+2. Set `parent_map_id`, `device_id`, `x_px`, `y_px`, `node_size` (=300)
+3. Copy the `icon_font_blob` bytes verbatim from an existing node
+4. Inherit the 5 color fields from the target canvas defaults
+
+---
+
+## Map Canvas Container Fields
+
+Tags `0x61A8`–`0x61FA`. One object per map canvas. 85 fields total.
+
+Key field groups:
+
+- Canvas background color and grid spacing
+- 5-color node palette (normal / warn / error / bg / selected)
+- 6-color link palette
+- 4 default label templates (device / network / netmap / link)
+- 5 font serialization blobs
+- `u32_array` of subnet refs

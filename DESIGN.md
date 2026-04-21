@@ -68,19 +68,19 @@ Type codes:
 
 The leading tag in the section-1 fields identifies the object type:
 
-| Range | Object type |
-|-------|-------------|
-| `0x1F40–0x1F5A` | Device |
-| `0x2EE0–0x2EF4` | Probe config |
-| `0x36B0–0x36D1` | Probe template |
-| `0x3C68–0x3C72` | SNMP profile |
-| `0x3E80–0x3E9B` | Map |
-| `0x55F0–0x55F9` | Topology link/edge |
-| `0x6978–0x697A` | File asset (virtual FS: fonts, icons, certs) |
-| `0x7530–0x7533` | Tool |
-| `0xBF68–0xBF71` | Service |
-
-Objects with tag `0x697A` (parent_dir_id) are file assets (fonts, icons, certificates) — filter these when enumerating user-created objects.
+| Range | Object type | Notes |
+|-------|-------------|-------|
+| `0x1F40–0x1F5A` | Device | |
+| `0x2EE0–0x2EF4` | Probe config | |
+| `0x36B0–0x36D1` | Probe template | |
+| `0x3C68–0x3C72` | SNMP profile | |
+| `0x3E80–0x3E9B` | Notification | `0x3E9A` = 16-byte reserved-zero padding (tcode `0x18`) |
+| `0x55F0–0x55F9` | Topology link/edge | `0x55F1` (device_a_id), `0x55F4/5` (device_b_id) |
+| `0x5DC0–0x5DDF` | Map node placement | `0x5DC0` (map_id), `0x5DC4` (device_id), `0x5DC5/6` (x/y px) |
+| `0x61A8–0x61FA` | Map canvas container | 85 fields: background, grid, palettes, label templates, font blobs |
+| `0x6978–0x697A` | File asset | fonts, icons, certs — filter when enumerating user objects |
+| `0x7530–0x7533` | Tool | |
+| `0xBF68–0xBF71` | Service | |
 
 ## IPv4 Encoding
 
