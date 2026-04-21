@@ -1,0 +1,109 @@
+/**
+ * Domain types for The Dude database objects.
+ *
+ * All IDs are the integer primary keys from the `objs` table.
+ * IPv4 addresses are dotted-decimal strings. Credentials are
+ * present only when read from a database that stores them — callers
+ * are responsible for handling these values appropriately.
+ */
+
+/** Summary statistics for an open database. */
+export interface DbStats {
+  objects: number;
+  outages: number;
+  chartRaw: number;
+  chart10min: number;
+  chart2hour: number;
+  chart1day: number;
+}
+
+/** A monitored network device. */
+export interface Device {
+  id: number;
+  name: string;
+  /** Dotted-decimal IPv4, or FQDN for DNS-mode devices. */
+  address: string;
+  /** RouterOS admin username — stored plaintext in dude.db. */
+  username?: string;
+  /** RouterOS admin password — stored plaintext in dude.db. */
+  password?: string;
+  routerOS: boolean;
+  snmpEnabled: boolean;
+  snmpProfileId?: number;
+  pollInterval?: number;
+  /** Colon-separated MAC addresses observed on this device. */
+  macs: string[];
+}
+
+/** Options for adding a new device. */
+export interface AddDeviceOptions {
+  name: string;
+  /** Dotted-decimal IPv4, or FQDN for DNS-mode. */
+  address: string;
+  username?: string;
+  password?: string;
+  routerOS?: boolean;
+  snmpEnabled?: boolean;
+  snmpProfileId?: number;
+  /** Probe type IDs to attach. Defaults to ping (10160) if omitted. */
+  probeTypeIds?: number[];
+}
+
+/** A probe type template (defines what can be monitored). */
+export interface ProbeTemplate {
+  id: number;
+  name: string;
+  /** 1=ping, 3=routeros, 5=snmp, etc. */
+  kind: number;
+  port?: number;
+  builtIn: boolean;
+}
+
+/** A per-device probe configuration (links device ↔ service ↔ template). */
+export interface ProbeConfig {
+  id: number;
+  deviceId: number;
+  serviceId: number;
+  probeTypeId: number;
+  enabled: boolean;
+  createdAt?: number;
+}
+
+/** A monitoring service — time-series anchor in chart_values_* tables. */
+export interface Service {
+  id: number;
+  /** Convention: "probe_type @ device_name" */
+  name: string;
+  unit: string;
+  enabled: boolean;
+}
+
+/** A Dude map canvas. */
+export interface DudeMap {
+  id: number;
+  name: string;
+}
+
+/** An outage record from the outages table. */
+export interface Outage {
+  serviceId: number;
+  deviceId: number;
+  mapId: number;
+  time: number;
+  status: number;
+  duration: number;
+}
+
+/** Chart/metric data point. */
+export interface MetricPoint {
+  serviceId: number;
+  timestamp: number;
+  value: number;
+}
+
+/** Options for export operations. */
+export interface ExportOptions {
+  format: "json" | "csv";
+  type: "devices" | "probes" | "services" | "maps" | "all";
+  includeCredentials?: boolean;
+}

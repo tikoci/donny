@@ -1,0 +1,69 @@
+/**
+ * @module @tikoci/donny
+ *
+ * TypeScript library for reading and writing MikroTik The Dude network
+ * monitoring databases (dude.db).
+ *
+ * ## Quick start
+ *
+ * ```ts
+ * import { DudeDB } from "@tikoci/donny";
+ *
+ * const db = DudeDB.open("dude.db", { readonly: true });
+ * const devices = db.devices();
+ * console.log(devices);
+ * db.close();
+ * ```
+ *
+ * ## Key exports
+ *
+ * - {@link DudeDB} — Main class: `open()`, `devices()`, `probeTemplates()`,
+ *   `maps()`, `services()`, `outages()`, `metrics()`, `addDevice()`, `stats()`
+ * - {@link decodeBlob} / {@link encodeDevice} — Low-level Nova Message codec
+ * - {@link ipv4FromU32} / {@link ipv4ToU32} — IPv4 ↔ dude.db u32 conversion
+ * - {@link TAG} / {@link RANGE} / {@link NOVA_MAGIC} — Tag and range constants
+ *
+ * @packageDocumentation
+ */
+
+// Database class
+export { DudeDB } from "./lib/db.ts";
+
+// Nova Message codec (low-level)
+export {
+  NOVA_MAGIC,
+  TAG,
+  RANGE,
+  decodeBlob,
+  encodeDevice,
+  encodeService,
+  encodeProbeConfig,
+  getField,
+  getStr,
+  getU32,
+  getBool,
+  getU32Array,
+  hasTagInRange,
+  ipv4FromU32,
+  ipv4ToU32,
+  isBuiltInProbeName,
+  PROBE_ID_PING,
+  NovaWriter,
+} from "./lib/nova.ts";
+
+// Domain types
+export type {
+  DbStats,
+  Device,
+  AddDeviceOptions,
+  ProbeTemplate,
+  ProbeConfig,
+  Service,
+  DudeMap,
+  Outage,
+  MetricPoint,
+  ExportOptions,
+} from "./lib/types.ts";
+
+// Nova codec types
+export type { NovaField, NovaMessage, NovaValue } from "./lib/nova.ts";
