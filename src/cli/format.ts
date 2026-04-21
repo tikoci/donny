@@ -20,12 +20,12 @@ export function printTable(rows: Record<string, string | number | boolean | unde
     return;
   }
   const widths = columns.map((col) => Math.max(col.length, ...rows.map((r) => String(r[col] ?? "").length)));
-  const header = columns.map((col, i) => col.padEnd(widths[i]!)).join("  ");
+  const header = columns.map((col, i) => col.padEnd(widths[i] ?? col.length)).join("  ");
   const sep = widths.map((w) => "-".repeat(w)).join("  ");
   console.log(`  ${header}`);
   console.log(`  ${sep}`);
   for (const row of rows) {
-    const line = columns.map((col, i) => String(row[col] ?? "").padEnd(widths[i]!)).join("  ");
+    const line = columns.map((col, i) => String(row[col] ?? "").padEnd(widths[i] ?? col.length)).join("  ");
     console.log(`  ${line}`);
   }
 }

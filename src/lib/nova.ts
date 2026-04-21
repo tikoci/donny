@@ -139,22 +139,31 @@ class Cur {
 
   u8(): number {
     if (this.left < 1) throw new RangeError("eof");
-    return this.buf[this.pos++]!;
+    const b = this.buf[this.pos];
+    if (b === undefined) throw new RangeError("eof");
+    this.pos += 1;
+    return b;
   }
 
   u16(): number {
     if (this.left < 2) throw new RangeError("eof");
-    const v = (this.buf[this.pos]! | (this.buf[this.pos + 1]! << 8)) >>> 0;
+    const b0 = this.buf[this.pos];
+    const b1 = this.buf[this.pos + 1];
+    if (b0 === undefined || b1 === undefined) throw new RangeError("eof");
+    const v = (b0 | (b1 << 8)) >>> 0;
     this.pos += 2;
     return v;
   }
 
   u32(): number {
     if (this.left < 4) throw new RangeError("eof");
-    const b0 = this.buf[this.pos]!;
-    const b1 = this.buf[this.pos + 1]!;
-    const b2 = this.buf[this.pos + 2]!;
-    const b3 = this.buf[this.pos + 3]!;
+    const b0 = this.buf[this.pos];
+    const b1 = this.buf[this.pos + 1];
+    const b2 = this.buf[this.pos + 2];
+    const b3 = this.buf[this.pos + 3];
+    if (b0 === undefined || b1 === undefined || b2 === undefined || b3 === undefined) {
+      throw new RangeError("eof");
+    }
     this.pos += 4;
     return ((b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)) >>> 0);
   }
@@ -317,7 +326,11 @@ export function ipv4ToU32(ip: string): number {
   if (parts.length !== 4 || parts.some((p) => Number.isNaN(p) || p < 0 || p > 255)) {
     throw new Error(`Invalid IPv4: ${ip}`);
   }
-  return ((parts[0]! | (parts[1]! << 8) | (parts[2]! << 16) | (parts[3]! << 24)) >>> 0);
+  const [a, b, c, d] = parts;
+  if (a === undefined || b === undefined || c === undefined || d === undefined) {
+    throw new Error(`Invalid IPv4: ${ip}`);
+  }
+  return ((a | (b << 8) | (c << 16) | (d << 24)) >>> 0);
 }
 
 // --- Encoder ---

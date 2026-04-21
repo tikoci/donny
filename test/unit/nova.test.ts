@@ -46,6 +46,11 @@ const TC_STR = 0x21;
 const TC_U32_ARRAY = 0x88;
 const TC_COMPOUND = 0xa0;
 
+function must<T>(value: T | null | undefined, message = "expected value to be present"): T {
+  if (value === null || value === undefined) throw new Error(message);
+  return value;
+}
+
 // Minimal device blob: IP 192.168.2.1, name "testhost", selfID 1000
 const IP_DEVICE_BLOB = Uint8Array.from([
   ...MAGIC,
@@ -92,35 +97,33 @@ describe("decodeBlob", () => {
 
   test("decodes IP-mode device — extracts IP address", () => {
     const msg = decodeBlob(IP_DEVICE_BLOB);
-    expect(msg).not.toBeNull();
-    const ipArr = getU32Array(msg!, TAG.DEVICE_IP);
+    const ipArr = getU32Array(must(msg), TAG.DEVICE_IP);
     expect(ipArr).toBeDefined();
-    expect(ipv4FromU32(ipArr![0]!)).toBe("192.168.2.1");
+    expect(ipv4FromU32(must(ipArr)?.[0] ?? 0)).toBe("192.168.2.1");
   });
 
   test("decodes IP-mode device — extracts name", () => {
     const msg = decodeBlob(IP_DEVICE_BLOB);
-    expect(getStr(msg!, TAG.NAME)).toBe("testhost");
+    expect(getStr(must(msg), TAG.NAME)).toBe("testhost");
   });
 
   test("decodes IP-mode device — extracts selfID", () => {
     const msg = decodeBlob(IP_DEVICE_BLOB);
-    expect(getU32(msg!, TAG.SELF_ID)).toBe(1000);
+    expect(getU32(must(msg), TAG.SELF_ID)).toBe(1000);
   });
 
   test("classifies IP-mode device by tag range", () => {
-    const msg = decodeBlob(IP_DEVICE_BLOB)!;
+    const msg = must(decodeBlob(IP_DEVICE_BLOB));
     expect(hasTagInRange(msg, RANGE.DEVICE_LO, RANGE.DEVICE_HI)).toBeTrue();
   });
 
   test("decodes DNS-mode device — tag 0x1F41 present", () => {
     const msg = decodeBlob(DNS_DEVICE_BLOB);
-    expect(msg).not.toBeNull();
-    expect(hasTagInRange(msg!, RANGE.DEVICE_LO, RANGE.DEVICE_HI)).toBeTrue();
+    expect(hasTagInRange(must(msg), RANGE.DEVICE_LO, RANGE.DEVICE_HI)).toBeTrue();
   });
 
   test("decodes DNS-mode device — name as address", () => {
-    const msg = decodeBlob(DNS_DEVICE_BLOB)!;
+    const msg = must(decodeBlob(DNS_DEVICE_BLOB));
     expect(getStr(msg, TAG.NAME)).toBe("router.lan");
   });
 
@@ -130,7 +133,7 @@ describe("decodeBlob", () => {
       ...u16(TAG.DEVICE_ENABLED), M_STD, 0x00, // bool_false
       ...u16(TAG.NAME), M_STD, TC_STR, ...str("x"),
     ]);
-    const msg = decodeBlob(blob)!;
+    const msg = must(decodeBlob(blob));
     const f = msg.fields.find((f) => f.tag === TAG.DEVICE_ENABLED);
     expect(f?.val).toEqual({ k: "bool", v: false });
   });
@@ -141,7 +144,7 @@ describe("decodeBlob", () => {
       ...u16(TAG.DEVICE_ENABLED), M_STD, 0x01, // bool_true — 0 bytes, NOT 1 byte
       ...u16(TAG.NAME), M_STD, TC_STR, ...str("booltest"),
     ]);
-    const msg = decodeBlob(blob)!;
+    const msg = must(decodeBlob(blob));
     const f = msg.fields.find((f) => f.tag === TAG.DEVICE_ENABLED);
     expect(f?.val).toEqual({ k: "bool", v: true });
     // Name field must also be present (proves no byte was consumed by bool_true)
@@ -155,7 +158,7 @@ describe("decodeBlob", () => {
     ]);
     const msg = decodeBlob(blob);
     expect(msg).not.toBeNull(); // returns partial result, not null
-    expect(msg!.fields).toHaveLength(0);
+    expect(must(msg).fields).toHaveLength(0);
   });
 
   test("stops cleanly on invalid marker", () => {
@@ -163,7 +166,7 @@ describe("decodeBlob", () => {
       ...MAGIC, ...u32(1),
       ...u16(0x1234), 0x20, TC_STR, // bad marker 0x20
     ]);
-    const msg = decodeBlob(blob)!;
+    const msg = must(decodeBlob(blob));
     expect(msg.fields).toHaveLength(0);
   });
 });
@@ -207,22 +210,22 @@ describe("isBuiltInProbeName", () => {
 describe("encode / decode round-trip", () => {
   test("encodeDevice round-trips IP address and name", () => {
     const blob = encodeDevice({ id: 99, name: "core-01", address: "10.10.10.1" });
-    const msg = decodeBlob(blob)!;
-    const ipArr = getU32Array(msg, TAG.DEVICE_IP)!;
-    expect(ipv4FromU32(ipArr[0]!)).toBe("10.10.10.1");
+    const msg = must(decodeBlob(blob));
+    const ipArr = must(getU32Array(msg, TAG.DEVICE_IP));
+    expect(ipv4FromU32(must(ipArr[0]))).toBe("10.10.10.1");
     expect(getStr(msg, TAG.NAME)).toBe("core-01");
   });
 
   test("encodeDevice round-trips credentials", () => {
     const blob = encodeDevice({ id: 1, name: "r", address: "1.2.3.4", username: "admin", password: "s3cr3t" });
-    const msg = decodeBlob(blob)!;
+    const msg = must(decodeBlob(blob));
     expect(getStr(msg, TAG.DEVICE_USERNAME)).toBe("admin");
     expect(getStr(msg, TAG.DEVICE_PASSWORD)).toBe("s3cr3t");
   });
 
   test("encodeDevice for DNS-mode (no IP) — address absent from 0x1F40", () => {
     const blob = encodeDevice({ id: 2, name: "gw.example.com", address: "gw.example.com" });
-    const msg = decodeBlob(blob)!;
+    const msg = must(decodeBlob(blob));
     const ipArr = getU32Array(msg, TAG.DEVICE_IP) ?? [];
     expect(ipArr).toHaveLength(0);
     expect(getStr(msg, TAG.NAME)).toBe("gw.example.com");
@@ -230,14 +233,14 @@ describe("encode / decode round-trip", () => {
 
   test("encodeService round-trips name and unit", () => {
     const blob = encodeService({ id: 500, name: "ping @ myrouter", unit: "s" });
-    const msg = decodeBlob(blob)!;
+    const msg = must(decodeBlob(blob));
     expect(getStr(msg, TAG.NAME)).toBe("ping @ myrouter");
     expect(getStr(msg, TAG.SVC_UNIT)).toBe("s");
   });
 
   test("encodeProbeConfig links device/service/type", () => {
     const blob = encodeProbeConfig({ id: 200, deviceId: 100, serviceId: 201, probeTypeId: 10160 });
-    const msg = decodeBlob(blob)!;
+    const msg = must(decodeBlob(blob));
     expect(getU32(msg, TAG.PROBE_DEVICE_ID)).toBe(100);
     expect(getU32(msg, TAG.PROBE_SERVICE_ID)).toBe(201);
     expect(getU32(msg, TAG.PROBE_TYPE_ID)).toBe(10160);

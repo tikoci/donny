@@ -2,7 +2,7 @@
 
 ## Layers
 
-```
+```text
 src/
   lib/
     nova.ts      — Nova Message TLV codec (encode + decode)
@@ -38,6 +38,7 @@ The binary serialization format used throughout RouterOS IPC, WinBox, and dude.d
 **Magic**: `4D 32 01 00 FF 88 01 00` (8 bytes)
 
 **Structure**:
+
 1. Magic (8 bytes)
 2. Section-1 field count (u32 LE)
 3. Section-1 fields (the "standard" fields for this object type)
@@ -87,6 +88,7 @@ Devices with a hostname instead of an IP address have no entry in tag `0x1F40` (
 ## addDevice Transaction
 
 `DudeDB.addDevice()` writes three objects in a single SQLite transaction:
+
 1. **Device** blob (tags `0x1F40–0x1F4x`) with IP/DNS, credentials, MAC placeholder
 2. **Service** blob (tags `0xBF68–0xBF71`) linked to the device
 3. **ProbeConfig** blob (tags `0x2EE0–0x2EF4`) linking device → service → probe type

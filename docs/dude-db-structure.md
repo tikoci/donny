@@ -50,7 +50,7 @@ CREATE TABLE chart_values_1day   (sourceIDandTime INTEGER PRIMARY KEY, value REA
 
 Key packing:
 
-```
+```text
 source_id = sourceIDandTime >> 32        -- objs.id of the service
 timestamp = sourceIDandTime & 0xFFFFFFFF -- Unix seconds
 ```
@@ -69,7 +69,7 @@ and internal `.x3` configuration files.
 
 All blobs start with an 8-byte magic:
 
-```
+```text
 4D 32 01 00 FF 88 01 00
 ```
 
@@ -78,7 +78,7 @@ optional continuation section.
 
 ### Two-Section Structure
 
-```
+```text
 MAGIC (8 bytes)
 SECTION_1_COUNT (u32 LE)
 SECTION_1_FIELDS × SECTION_1_COUNT
@@ -92,7 +92,7 @@ object's own ID. The name field is always the last field in the blob.
 
 ### Field Encoding
 
-```
+```text
 TAG (2 bytes LE)  MARKER (1 byte)  TCODE (1 byte)  VALUE (variable)
 ```
 
@@ -221,7 +221,7 @@ Key section-2 fields:
 
 ## Object Relationships
 
-```
+```text
 probe_template ←── probe_config ──→ device
                        │
                        └──→ service
