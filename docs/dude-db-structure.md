@@ -303,6 +303,7 @@ Tags `0x5DC0`–`0x5DDF`. Each object = one device placed on a map canvas.
 | `0x0010` | name | str | Label template override (optional) |
 
 **Write-path** — to add a device to a map:
+
 1. Create an object in range `0x5DC0`–`0x5DDF`
 2. Set `parent_map_id`, `device_id`, `x_px`, `y_px`, `node_size` (=300)
 3. Copy the `icon_font_blob` bytes verbatim from an existing node
