@@ -25,9 +25,9 @@ src/
 
 The Dude stores all configuration in a SQLite database with three key tables:
 
-- `objs` — one row per monitored object (device, probe, map, etc.). The `data` column holds a Nova Message binary blob.
+- `objs` — one row per monitored object (device, probe, map, etc.). The `obj` column holds a Nova Message binary blob.
 - `obj_links` — topology edges (from/to obj ids).
-- `chart_raw`, `chart_10min`, `chart_2hour`, `chart_1day` — time-series metrics.
+- `chart_values_raw`, `chart_values_10min`, `chart_values_2hour`, `chart_values_1day` — time-series metrics.
 
 `DudeDB` reads and writes `objs` directly. Edges and metrics are read-only in this version.
 
@@ -57,8 +57,10 @@ Type codes:
 | `0x08` | u32 | 4 |
 | `0x09` | u8 | 1 |
 | `0x10` | u64 | 8 |
+| `0x18` | bytes_16 | fixed 16 (notification padding) |
+| `0x20` | bytes_4 | fixed 4 (rare fixed-width fields) |
 | `0x21` | str | 1-byte len prefix + bytes |
-| `0x31` | bytes | 2-byte len prefix + bytes |
+| `0x31` | bytes | 1-byte len prefix + bytes |
 | `0x88` | u32_array | 2-byte count + count×4 bytes |
 | `0xA0` | compound | 2-byte count + count × nested fields |
 
@@ -71,9 +73,12 @@ The leading tag in the section-1 fields identifies the object type:
 | `0x1F40–0x1F5A` | Device |
 | `0x2EE0–0x2EF4` | Probe config |
 | `0x36B0–0x36D1` | Probe template |
-| `0xBF68–0xBF71` | Service |
+| `0x3C68–0x3C72` | SNMP profile |
 | `0x3E80–0x3E9B` | Map |
 | `0x55F0–0x55F9` | Topology link/edge |
+| `0x6978–0x697A` | File asset (virtual FS: fonts, icons, certs) |
+| `0x7530–0x7533` | Tool |
+| `0xBF68–0xBF71` | Service |
 
 Objects with tag `0x697A` (parent_dir_id) are file assets (fonts, icons, certificates) — filter these when enumerating user-created objects.
 

@@ -1,5 +1,5 @@
 ---
-applyTo: "src/**"
+applyTo: "**"
 ---
 
 # General Code Instructions
@@ -20,6 +20,9 @@ applyTo: "src/**"
 
 - `tcode 0x01` = bool_true, **0 payload bytes** — do not consume the next byte.
 - `tcode 0x09` = u8, **1 payload byte** — not 4.
+- `tcode 0x18` = fixed **16 bytes** (notification padding).
+- `tcode 0x20` = fixed **4 bytes** (rare fixed-width fields).
+- `tcode 0x31` = bytes, **1-byte** length prefix — not 2.
 - Marker `0x11` (compact) = always exactly 1 payload byte regardless of tcode.
 - Magic: `4D 32 01 00 FF 88 01 00`. Every blob starts with this.
 - IPv4 stored as u32 LE. Sentinel `0xFFFFFFFF` = no address (DNS-mode device).
@@ -40,4 +43,4 @@ applyTo: "src/**"
 
 ## End-of-Session Review
 
-After significant changes, verify `DESIGN.md` reflects the current implementation — especially tag constants, object types, and transaction logic.
+After significant changes, verify both `DESIGN.md` and this file reflect the current implementation — especially tag constants, tcode table, object types, and transaction logic.

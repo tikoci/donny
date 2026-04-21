@@ -17,6 +17,9 @@ See `DESIGN.md` for the full field format. Key invariants:
 - Magic: `4D 32 01 00 FF 88 01 00` (8 bytes). All blobs start with this.
 - `tcode 0x01` = bool_true, **0 payload bytes** — do not consume the next byte.
 - `tcode 0x09` = u8, **1 payload byte** — not 4.
+- `tcode 0x18` = fixed **16 bytes** (notification padding fields).
+- `tcode 0x20` = fixed **4 bytes** (rare fixed-width fields).
+- `tcode 0x31` = bytes, **1-byte** length prefix — not 2.
 - Marker `0x11` (compact) = always exactly 1 payload byte regardless of tcode.
 - IPv4 is LE u32; sentinel `0xFFFFFFFF` = no address (DNS-mode device).
 - Continuation fields (self_id separator) use `marker=0xFE`; NAME is always last.
@@ -66,7 +69,6 @@ Biome config in `biome.json`. Markdownlint config in `.markdownlint.yaml`.
 
 ## End-of-Session Review
 
-After significant work, check whether `DESIGN.md` needs updating — especially for:
-- New tag constants or object types added
-- Changes to the Nova encoder/decoder
-- Changes to the `addDevice` transaction logic
+After significant work, check whether these need updating and that they stay in sync:
+- `DESIGN.md` — tag constants, tcode table, object type ranges, transaction logic
+- `.github/instructions/general.md` — Nova invariants section (Copilot sees this, not CLAUDE.md)

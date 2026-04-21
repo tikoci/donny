@@ -7,7 +7,7 @@
  * Format: 8-byte magic, 4-byte LE field count, N fields, optional continuation.
  * Each field: 2-byte LE tag, 1-byte marker, 1-byte tcode, variable-width value.
  *
- * Reference: docs/dude-db-structure.md
+ * Reference: DESIGN.md
  */
 
 /** 8-byte magic that starts every Nova Message blob. */
@@ -24,6 +24,8 @@ const TC_BOOL_TRUE = 0x01; // 0 bytes
 const TC_U32 = 0x08; // 4 bytes LE
 const TC_U8 = 0x09; // 1 byte
 const TC_U64 = 0x10; // 8 bytes LE
+const TC_BYTES_16 = 0x18; // fixed 16 bytes (notification padding fields)
+const TC_BYTES_4 = 0x20; // fixed 4 bytes (rare fixed-width fields)
 const TC_STR = 0x21; // 1-byte length prefix + UTF-8 bytes
 const TC_BYTES = 0x31; // 1-byte length prefix + raw bytes
 const TC_U32_ARRAY = 0x88; // 2-byte count + count × 4 bytes LE
@@ -235,6 +237,10 @@ function readValue(cur: Cur, marker: number, tcode: number): NovaValue {
       return { k: "u32", v: cur.u32() };
     case TC_U64:
       return { k: "u64", v: cur.u64() };
+    case TC_BYTES_16:
+      return { k: "bytes", v: cur.slice(16) };
+    case TC_BYTES_4:
+      return { k: "bytes", v: cur.slice(4) };
     case TC_STR: {
       const len = cur.u8();
       return { k: "str", v: new TextDecoder().decode(cur.slice(len)) };
