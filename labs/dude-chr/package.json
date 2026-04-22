@@ -1,0 +1,16 @@
+{
+  "name": "@tikoci/donny-lab-dude-chr",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Lab: boot CHR with Dude package, load dude.db, verify via REST",
+  "scripts": {
+    "boot": "bun run boot.ts",
+    "boot:load": "bun run boot.ts --load ../../2022.db",
+    "boot:keep": "bun run boot.ts --keep"
+  },
+  "dependencies": {
+    "@tikoci/donny": "link:../..",
+    "@tikoci/quickchr": "file:../../../quickchr"
+  }
+}
