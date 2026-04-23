@@ -1,0 +1,15 @@
+{
+  "name": "@tikoci/donny-lab-dude-agent",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Lab: two-CHR Dude server+agent with TZSP protocol sniffing",
+  "scripts": {
+    "boot": "bun run boot.ts",
+    "boot:keep": "bun run boot.ts --keep"
+  },
+  "dependencies": {
+    "@tikoci/donny": "link:../..",
+    "@tikoci/quickchr": "file:../../../quickchr"
+  }
+}

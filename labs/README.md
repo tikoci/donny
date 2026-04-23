@@ -5,7 +5,8 @@ These run outside the main `src/` tree so iteration doesn't affect production co
 
 | Directory | Purpose |
 |-----------|---------|
-| `dude-chr/` | Boot a CHR with the Dude package, load a `dude.db`, verify via REST |
+| `dude-chr/` | Boot a CHR with the Dude package, load a `dude.db`, verify via REST. `--smb` flag exposes the Dude directory as a network share. |
+| `dude-agent/` | Two-CHR setup (server + agent mode) connected via QEMU socket L2 network. Sniffs agent protocol traffic with TZSP. |
 
 ## Prerequisites
 

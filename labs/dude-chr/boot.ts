@@ -4,6 +4,7 @@
  * Usage:
  *   bun run boot.ts                        # Boot, enable Dude, download fresh dude.db
  *   bun run boot.ts --load ../../2022.db   # Boot, load a custom dude.db, verify devices
+ *   bun run boot.ts --smb                  # Also expose Dude dir via SMB share
  *   bun run boot.ts --keep                 # Keep instance running after script exits
  *   bun run boot.ts --name my-dude         # Named instance (reuse if already running)
  *   bun run boot.ts --help                 # Print this help
@@ -11,6 +12,7 @@
  * Phases:
  *   1. Boot CHR with the "dude" extra package installed
  *   2. Enable Dude (creates /dude/ directory and empty dude.db on CHR)
+ *   2b.[If --smb] Configure /ip/smb to share the /dude/ directory
  *   3. [If --load] Disable Dude, SCP custom db as /dude/dude.db, re-enable
  *   4. Download /dude/dude.db to local disk for inspection
  *   5. Print device count via REST and exec
@@ -32,15 +34,20 @@ import { resolve, basename } from "node:path";
 
 const args = process.argv.slice(2);
 
+// Host port for SMB forward — uses the reserved slot (+6) in quickchr's port block.
+// Default port base is 9100, so SMB lands on 9106. Declared early for use in --help.
+const SMB_HOST_PORT = 9106;
+
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`
 dude-chr lab — boot CHR with Dude package, load dude.db, verify via REST
 
 Usage:
-  bun run boot.ts [--load <path>] [--keep] [--name <n>] [--channel <ch>]
+  bun run boot.ts [--load <path>] [--smb] [--keep] [--name <n>] [--channel <ch>]
 
 Options:
   --load <path>      Local .db file to upload as dude.db (optional)
+  --smb              Expose /dude directory as an SMB share on host port ${SMB_HOST_PORT}
   --keep             Keep the CHR instance running after script exits
   --name <name>      Instance name (default: dude-lab)
   --channel <ch>     RouterOS channel: stable, long-term, testing (default: long-term)
@@ -56,6 +63,7 @@ function flag(name: string): string | undefined {
 
 const LOAD_DB = flag("--load") ? resolve(flag("--load")!) : undefined;
 const KEEP = args.includes("--keep");
+const SMB = args.includes("--smb");
 const NAME = flag("--name") ?? "dude-lab";
 const CHANNEL = (flag("--channel") ?? "long-term") as "long-term" | "stable" | "testing";
 
@@ -107,7 +115,7 @@ async function main() {
   section("Phase 1 · Boot CHR with Dude package");
   console.log(`Instance : ${NAME}`);
   console.log(`Channel  : ${CHANNEL}`);
-  console.log(`Packages : dude`);
+  console.log(`Packages : dude${SMB ? " (+ SMB on port " + SMB_HOST_PORT + ")" : ""}`);
 
   instance = await QuickCHR.start({
     name: NAME,
@@ -121,6 +129,10 @@ async function main() {
     packages: ["dude"],
     cpu: 1,
     mem: 256,
+    // Forward SMB guest port 445 → host port SMB_HOST_PORT when --smb is set.
+    // SMB_HOST_PORT sits in the reserved block (portBase+6) so it won't collide
+    // with any of the standard quickchr service ports.
+    extraPorts: SMB ? [{ name: "smb", host: SMB_HOST_PORT, guest: 445, proto: "tcp" as const }] : [],
   });
 
   console.log(`SSH port : ${instance.sshPort}`);
@@ -149,6 +161,29 @@ async function main() {
   const dudeState = await instance.exec("/dude/print");
   console.log("\n/dude/print output:");
   console.log(dudeState.output);
+
+  // ── Phase 2b: Configure SMB share (optional) ─────────────────────────────
+  if (SMB) {
+    section("Phase 2b · Configure SMB share for /dude directory");
+    // RouterOS SMB server shares from flash root. The Dude data directory is /dude/.
+    // We add a read-write share with a password-free guest user so the host can
+    // mount it without credentials and read (or write, when Dude is stopped) dude.db.
+    await instance.exec(`
+      /ip/smb/set enabled=yes
+      /ip/smb/shares/add name=dude directory=/dude comment="dude data dir"
+      /ip/smb/users/add name=guest password="" read-only=no
+    `);
+    console.log("SMB share configured: \\\\127.0.0.1\\dude");
+    console.log(`\nTo mount on macOS:`);
+    console.log(`  mkdir -p /tmp/chr-dude`);
+    console.log(`  mount_smbfs //guest@127.0.0.1:${SMB_HOST_PORT}/dude /tmp/chr-dude`);
+    console.log(`  ls -la /tmp/chr-dude   # should show dude.db (and .db-wal if Dude is running)`);
+    console.log(`\nTo write a modified db (safe only when Dude is stopped):`);
+    console.log(`  # 1. Stop Dude:  curl -u admin: -X POST http://127.0.0.1:${instance.ports.http}/rest/dude/set -d '{"enabled":"false"}'`);
+    console.log(`  # 2. Write:      bun run ../../src/cli/index.ts add device --db /tmp/chr-dude/dude.db --name "test" --address 1.2.3.4`);
+    console.log(`  # 3. Unmount:    umount /tmp/chr-dude`);
+    console.log(`  # 4. Re-enable:  curl -u admin: -X POST http://127.0.0.1:${instance.ports.http}/rest/dude/set -d '{"enabled":"true","data-directory":"dude"}'`);
+  }
 
   // ── Phase 3: Load custom db (optional) ────────────────────────────────────
   if (LOAD_DB) {
@@ -232,6 +267,7 @@ async function main() {
     console.log(`Instance "${NAME}" left running (--keep).`);
     console.log(`  SSH:  ssh -p ${instance.sshPort} admin@127.0.0.1`);
     console.log(`  REST: ${instance.restUrl}/rest/dude/device`);
+    if (SMB) console.log(`  SMB:  smb://guest@127.0.0.1:${SMB_HOST_PORT}/dude`);
     console.log(`  Stop: quickchr stop ${NAME}`);
   }
 }
