@@ -16,6 +16,8 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile --cwd labs/dude-agent
+      - run: bun install --frozen-lockfile --cwd labs/dude-chr
       - run: bun run lint:biome
       - run: bun run lint:typecheck
       - run: bun run lint:markdown
