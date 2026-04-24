@@ -11,6 +11,6 @@
   },
   "dependencies": {
     "@tikoci/donny": "link:../..",
-    "@tikoci/quickchr": "file:../../../quickchr"
+    "@tikoci/quickchr": "^0.3.0"
   }
 }

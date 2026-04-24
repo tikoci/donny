@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@tikoci/donny-lab-dude-chr",
+      "name": "@tikoci/donny-lab-dude-agent",
       "dependencies": {
         "@tikoci/donny": "link:../..",
         "@tikoci/quickchr": "^0.3.0",
