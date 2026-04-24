@@ -114,8 +114,8 @@ export interface DeviceType {
   name: string;
   /** Default probe type IDs assigned when this device type is selected. */
   defaultProbeIds: number[];
-  /** Icon ID from the asset table, or undefined for no icon. */
-  iconId?: number;
+  /** Parent type ID from the device type hierarchy, or undefined for root types. */
+  parentTypeId?: number;
   /** Manage URL template string. */
   manageUrl?: string;
   builtIn: boolean;

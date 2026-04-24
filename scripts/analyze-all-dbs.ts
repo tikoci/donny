@@ -19,11 +19,11 @@ const DBS = ["2022.db", "tikoci.db", "dude.db", "dude_from_export.db", "clean.db
 
 /** Ordered classifier: first match wins. */
 const TYPES: Array<[string, number, number]> = [
-  ["settings",     RANGE.SETTINGS_LO,      RANGE.SETTINGS_HI],
+  ["server_meta",  RANGE.SERVER_META_LO,   RANGE.SERVER_META_HI],
   ["syslog_rule",  RANGE.SYSLOG_RULE_LO,   RANGE.SYSLOG_RULE_HI],
-  ["device_type",  RANGE.DEVICE_TYPE_LO,   RANGE.DEVICE_TYPE_HI],
+  ["device_type",  RANGE.DEV_TYPE_LO,      RANGE.DEV_TYPE_HI],
   ["network",      RANGE.NETWORK_LO,       RANGE.NETWORK_HI],
-  ["chart_item",   RANGE.CHART_ITEM_LO,    RANGE.CHART_ITEM_HI],
+  ["chart_item",   RANGE.CHART_LO,         RANGE.CHART_HI],
   ["probe_config", RANGE.PROBE_CONFIG_LO,  RANGE.PROBE_CONFIG_HI],
   ["probe_tpl",    RANGE.PROBE_TEMPLATE_LO,RANGE.PROBE_TEMPLATE_HI],
   ["device",       RANGE.DEVICE_LO,        RANGE.DEVICE_HI],
@@ -31,7 +31,7 @@ const TYPES: Array<[string, number, number]> = [
   ["notification", RANGE.NOTIF_LO,         RANGE.NOTIF_HI],
   ["snmp_profile", RANGE.SNMP_LO,          RANGE.SNMP_HI],
   ["tool",         RANGE.TOOL_LO,          RANGE.TOOL_HI],
-  ["note",         RANGE.NOTE_LO,          RANGE.NOTE_HI],
+  ["svc_descr",    RANGE.SVC_DESCR_LO,     RANGE.SVC_DESCR_HI],
   ["link",         RANGE.LINK_LO,          RANGE.LINK_HI],
   ["link_type",    RANGE.LINK_TYPE_LO,     RANGE.LINK_TYPE_HI],
   ["map_node",     RANGE.NODE_LO,          RANGE.NODE_HI],
@@ -40,7 +40,7 @@ const TYPES: Array<[string, number, number]> = [
   ["active_sess",  RANGE.ACTIVE_SESSION_LO,RANGE.ACTIVE_SESSION_HI],
   ["asset",        RANGE.ASSET_LO,         RANGE.ASSET_HI],
   ["chart_line",   RANGE.CHART_LINE_LO,    RANGE.CHART_LINE_HI],
-  ["custom_fn",    RANGE.CUSTOM_FN_LO,     RANGE.CUSTOM_FN_HI],
+  ["data_source",  RANGE.DATA_SOURCE_LO,   RANGE.DATA_SOURCE_HI],
   ["group",        RANGE.GROUP_LO,         RANGE.GROUP_HI],
   ["discover",     RANGE.DISCOVER_LO,      RANGE.DISCOVER_HI],
 ];

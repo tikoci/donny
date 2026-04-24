@@ -293,14 +293,14 @@ export class DudeDB {
   deviceTypes(): DeviceType[] {
     const out: DeviceType[] = [];
     for (const { id, msg } of this.rawObjects()) {
-      if (!hasTagInRange(msg, RANGE.DEVICE_TYPE_LO, RANGE.DEVICE_TYPE_HI)) continue;
-      const iconRaw = getU32(msg, TAG.DTYPE_ICON_ID);
+      if (!hasTagInRange(msg, RANGE.DEV_TYPE_LO, RANGE.DEV_TYPE_HI)) continue;
+      const parentRaw = getU32(msg, TAG.DEV_TYPE_PARENT);
       out.push({
         id,
         name: getStr(msg, TAG.NAME) ?? "",
-        defaultProbeIds: getU32Array(msg, TAG.DTYPE_DEFAULT_PROBES) ?? [],
-        iconId: iconRaw === 0xffffffff ? undefined : iconRaw,
-        manageUrl: getStr(msg, TAG.DTYPE_MANAGE_URL) || undefined,
+        defaultProbeIds: getU32Array(msg, TAG.DEV_TYPE_DEF_PROBES) ?? [],
+        parentTypeId: parentRaw === 0xffffffff ? undefined : parentRaw,
+        manageUrl: getStr(msg, TAG.DEV_TYPE_URL) || undefined,
         builtIn: getU32(msg, TAG.SELF_ID) !== undefined && id < 20000,
       });
     }

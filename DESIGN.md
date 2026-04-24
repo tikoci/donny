@@ -66,34 +66,35 @@ Type codes:
 
 ## Object Classification by Tag Range
 
-The leading tag in the section-1 fields identifies the object type:
+The leading tag in the section-1 fields identifies the object type. If the first
+field is `SELF_ID` (`0x0001`), look at the next type-specific tag to classify.
 
-| Range | Object type | Notes |
-|-------|-------------|-------|
-| `0x07D0–0x07D1` | Chart item | |
-| `0x0FA0–0x1018` | Settings | single object per database (id=10000) |
-| `0x1770–0x1779` | Syslog rule | |
-| `0x1F40–0x1F5A` | Device | |
-| `0x2328` | Device group | |
-| `0x2710–0x2715` | Device type | |
-| `0x2AF8–0x2AFA` | Network | |
-| `0x2EE0–0x2EF4` | Probe config | |
-| `0x36B0–0x36D1` | Probe template | |
+| Range | Object type | Key tags / notes |
+|-------|-------------|-----------------|
+| `0x07D0–0x07DF` | Chart / Panel element | `0x07D0`=type str ("Chart Line"\|"Panel Element"), `0x07D1`=enabled bool |
+| `0x1000–0x101F` | Server state metadata | `0x1001`=root_id_list, `0x1015`=timestamp_array, `0x0FEF`=color palette — one per db |
+| `0x1770–0x177F` | Network scanner config / Syslog rule | boolean auto-discovery flags; syslog rule objects start at `0x1770` — one scanner config per db |
+| `0x1F40–0x1F5A` | Device | `0x1F40`=ip, `0x1F45`=type_id, `0x1F46/7`=credentials |
+| `0x2328–0x2337` | Group | `0x2328`=member_id_list (u32[]) |
+| `0x2710–0x271F` | Device type template | 17 built-ins: MikroTik Device, Bridge, Router, Switch, RouterOS, Windows Computer, HP Jet Direct, FTP/Mail/Web/DNS/POP3/IMAP4/News/Time Server, Printer, Some Device. `0x2710`=default probe IDs, `0x2712`=active probe IDs, `0x2713`=parent type id, `0x2714`=poll interval u8, `0x2715`=URL template |
+| `0x2AF8–0x2AFA` | Network / Subnet group | `0x2AF8`=subnet list (u32 pairs: ip+mask), `0x2AF9`=map_id |
+| `0x2EE0–0x2EF4` | Probe config | `0x2EE1`=device_id, `0x2EE3`=type_id, `0x2EEC`=service_id |
+| `0x36B0–0x36D1` | Probe template | `0x36B0`=kind str, `0x36B2`=port |
 | `0x3C68–0x3C72` | SNMP profile | |
 | `0x3E80–0x3E9B` | Notification | `0x3E9A` = 16-byte reserved-zero padding (tcode `0x18`) |
-| `0x4A38–0x4A3F` | Open panel | |
+| `0x4A38–0x4A3F` | Open panel | ephemeral; absent in offline databases |
 | `0x4E20–0x4E23` | Active session | ephemeral; absent in offline databases |
-| `0x5208–0x5209` | Note | |
-| `0x55F0–0x55F9` | Topology link/edge | `0x55F1` (device_a_id), `0x55F4/5` (device_b_id) |
+| `0x5208–0x520F` | Service description | annotation on a probe template; starts with `SELF_ID`. `0x5208`=parent probe template id, `0x5209`=creation timestamp |
+| `0x55F0–0x55F9` | Topology link/edge | `0x55F1`=device_a_id, `0x55F4/5`=device_b_id |
 | `0x59D8–0x59DB` | Link type | |
-| `0x5DC0–0x5DDF` | Map node placement | `0x5DC0` (map_id), `0x5DC4` (device_id), `0x5DC5/6` (x/y px) |
+| `0x5DC0–0x5DDF` | Map node placement | `0x5DC0`=map_id, `0x5DC4`=device_id, `0x5DC5/6`=x/y px |
 | `0x61A8–0x61FA` | Map canvas container | 85 fields: background, grid, palettes, label templates, font blobs |
 | `0x6590–0x65AD` | Discovery job | `0x659A` = network subnet as LE u32 broadcast address |
 | `0x697A` | File asset | fonts, icons, certs — filter when enumerating user objects |
 | `0x7530–0x7533` | Tool | |
 | `0xBF68–0xBF71` | Service | |
 | `0xC350–0xC356` | Chart line | |
-| `0xCB20–0xCB25` | Custom function | |
+| `0xCB20–0xCB2F` | Data source | custom SNMP variable; `0xCB21`=OID expression, `0xCB22`=description |
 
 ## export.dude Format
 

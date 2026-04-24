@@ -4,7 +4,7 @@ Boot two RouterOS CHR instances — one as a Dude **server**, one with Dude enab
 
 ## What It Does
 
-```
+```text
 [ dude-server ]──ether2 socket L2──[ dude-agent ]
       │                                   │
       │  TZSP stream → 10.0.2.2:37008     │
@@ -57,8 +57,8 @@ Port blocks are assigned dynamically by quickchr. After `--keep`, the script pri
 
 | Instance | REST | SSH | ether2 |
 |----------|------|-----|--------|
-| dude-server | http://127.0.0.1:9110 | port 9112 | 192.168.100.1/24 |
-| dude-agent  | http://127.0.0.1:9120 | port 9122 | 192.168.100.2/24 |
+| dude-server | `http://127.0.0.1:9110` | port 9112 | 192.168.100.1/24 |
+| dude-agent  | `http://127.0.0.1:9120` | port 9122 | 192.168.100.2/24 |
 
 Management from host:
 

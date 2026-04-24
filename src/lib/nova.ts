@@ -60,13 +60,13 @@ export const TAG = {
   DEVICE_LABEL: 0x1f59,
   DEVICE_CUSTOM_FIELD: 0x1f5a,
   DEVICE_SERVICES: 0x1f56,
-  // Device type (0x2710–0x2715)
-  DTYPE_DEFAULT_PROBES: 0x2710,
-  DTYPE_ALL_PROBES: 0x2711,
-  DTYPE_SNMP_PROBES: 0x2712,
-  DTYPE_ICON_ID: 0x2713,
-  DTYPE_POLL_INTERVAL: 0x2714,
-  DTYPE_MANAGE_URL: 0x2715,
+  // Device type template (0x2710–0x271F) — 17 built-in types (Bridge, Router, etc.)
+  DEV_TYPE_PROBE_IDS: 0x2712,   // u32[] active probe template IDs
+  DEV_TYPE_ALL_PROBES: 0x2711,  // u32[] all probe template IDs for this type
+  DEV_TYPE_DEF_PROBES: 0x2710,  // u32[] default-enabled probe IDs
+  DEV_TYPE_PARENT: 0x2713,      // u32 parent type id (0xFFFFFFFF = root)
+  DEV_TYPE_POLL: 0x2714,        // u8 poll interval in seconds
+  DEV_TYPE_URL: 0x2715,         // str device URL template e.g. "http://[Device.FirstAddress]"
   // Network/subnet group (0x2AF8–0x2AFA)
   NETWORK_SUBNETS: 0x2af8,
   NETWORK_MAP_ID: 0x2af9,
@@ -131,16 +131,24 @@ export const TAG = {
   // Open panel (0x4A38–0x4A3F)
   PANEL_SESSION_ID: 0x4a38,
   PANEL_MAP_ID: 0x4a3e,
-  // Chart item (0x07D0–0x07D1)
-  PANEL_ELEM_TYPE: 0x07d0,
+  // Service description — annotations on probe templates (0x5208–0x520F)
+  SVC_DESCR_PARENT: 0x5208,  // u32 probe template id this describes
+  SVC_DESCR_CREATED: 0x5209, // u32 creation timestamp (Unix seconds)
+  // Data source / custom SNMP variable (0xCB20–0xCB2F)
+  DS_EXPRESSION: 0xcb21,    // str OID formula e.g. "oid(concatenate(...))"
+  DS_DESCRIPTION: 0xcb22,   // str human-readable description
+  // Chart / panel element (0x07D0–0x07DF)
+  CHART_TYPE: 0x07d0,       // str "Chart Line" | "Panel Element"
+  CHART_ENABLED: 0x07d1,    // bool
   // Chart line (0xC350–0xC356)
   CHARTLINE_CHART_ID: 0xc350,
   CHARTLINE_SERVICE_ID: 0xc351,
-  // Custom function (0xCB20–0xCB25)
-  CUSTFN_CODE: 0xcb21,
-  CUSTFN_DESC: 0xcb22,
-  // Device group (0x2328)
-  GROUP_MEMBERS: 0x2328,
+  // Group (0x2328–0x2337)
+  GROUP_MEMBERS: 0x2328,    // u32[] device/object ids in the group
+  // Server state metadata (0x1000–0x101F) — one per database
+  SYS_LAST_UPDATE: 0x1015,  // u32[] [timestamp, ...] last-write timestamps
+  SYS_ROOT_IDS: 0x1001,     // u32[] root object id list
+  SYS_COLORS: 0x0fef,       // u32[] global color palette [red,blue,green,orange]
   // Auto-discovery job (0x6590–0x65AD)
   DISCOVER_PROBE_TPLS: 0x65a0,  // u32[] — probe template IDs to apply
   DISCOVER_EXCLUDE_IDS: 0x65a1, // u32[] — device IDs to exclude
@@ -154,6 +162,7 @@ export const TAG = {
 
 /** Tag range boundaries for object classification. */
 export const RANGE = {
+  // Core monitored objects
   DEVICE_LO: 0x1f40,
   DEVICE_HI: 0x1f5a,
   PROBE_CONFIG_LO: 0x2ee0,
@@ -162,46 +171,60 @@ export const RANGE = {
   PROBE_TEMPLATE_HI: 0x36d1,
   SERVICE_LO: 0xbf68,
   SERVICE_HI: 0xbf71,
-  NOTIF_LO: 0x3e80,
-  NOTIF_HI: 0x3e9b,
+  // Map / topology
   NODE_LO: 0x5dc0,
   NODE_HI: 0x5ddf,
   CANVAS_LO: 0x61a8,
   CANVAS_HI: 0x61fa,
   LINK_LO: 0x55f0,
   LINK_HI: 0x55f9,
+  GROUP_LO: 0x2328,
+  GROUP_HI: 0x2337,
+  // Alerting / notifications
+  NOTIF_LO: 0x3e80,
+  NOTIF_HI: 0x3e9b,
+  // Configuration profiles
   SNMP_LO: 0x3c68,
   SNMP_HI: 0x3c72,
   TOOL_LO: 0x7530,
   TOOL_HI: 0x7533,
-  ASSET_LO: 0x697a,
-  ASSET_HI: 0x697a,
-  // Newly decoded ranges
-  SETTINGS_LO: 0x0fa0,
-  SETTINGS_HI: 0x1018,
+  // Device type templates — 17 built-in types (Bridge, Router, Windows Computer, etc.)
+  DEV_TYPE_LO: 0x2710,
+  DEV_TYPE_HI: 0x271f,
+  // Charts and data sources (custom SNMP expressions)
+  CHART_LO: 0x07d0,
+  CHART_HI: 0x07df,
+  DATA_SOURCE_LO: 0xcb20,
+  DATA_SOURCE_HI: 0xcb2f,
+  // Service description annotations on probe templates
+  SVC_DESCR_LO: 0x5208,
+  SVC_DESCR_HI: 0x520f,
+  // Network scanner / auto-discovery settings (one per db)
+  NET_SCANNER_LO: 0x1770,
+  NET_SCANNER_HI: 0x177f,
+  // Syslog rules (subset of net-scanner range)
   SYSLOG_RULE_LO: 0x1770,
   SYSLOG_RULE_HI: 0x1779,
-  DEVICE_TYPE_LO: 0x2710,
-  DEVICE_TYPE_HI: 0x2715,
+  // Server state metadata (one per db)
+  SERVER_META_LO: 0x1000,
+  SERVER_META_HI: 0x101f,
+  // File assets (fonts, icons, certs) — not user objects
+  ASSET_LO: 0x697a,
+  ASSET_HI: 0x697a,
+  // Network/subnet group (0x2AF8–0x2AFA)
   NETWORK_LO: 0x2af8,
   NETWORK_HI: 0x2afa,
-  NOTE_LO: 0x5208,
-  NOTE_HI: 0x5209,
+  // Link type definitions (0x59D8–0x59DB)
   LINK_TYPE_LO: 0x59d8,
   LINK_TYPE_HI: 0x59db,
+  // Open panel / active session (ephemeral state)
   OPEN_PANEL_LO: 0x4a38,
   OPEN_PANEL_HI: 0x4a3f,
   ACTIVE_SESSION_LO: 0x4e20,
   ACTIVE_SESSION_HI: 0x4e23,
-  CHART_ITEM_LO: 0x07d0,
-  CHART_ITEM_HI: 0x07d1,
+  // Chart line (0xC350–0xC356)
   CHART_LINE_LO: 0xc350,
   CHART_LINE_HI: 0xc356,
-  CUSTOM_FN_LO: 0xcb20,
-  CUSTOM_FN_HI: 0xcb25,
-  // Device group (0x2328)
-  GROUP_LO: 0x2328,
-  GROUP_HI: 0x2328,
   // Auto-discovery job (0x6590–0x65AD)
   DISCOVER_LO: 0x6590,
   DISCOVER_HI: 0x65ad,

@@ -10,7 +10,7 @@ const db = DudeDB.openAuto(path, { readonly: true });
 let found = 0;
 
 for (const { id, msg } of db.rawObjects()) {
-  if (!hasTagInRange(msg, RANGE.SETTINGS_LO, RANGE.SETTINGS_HI)) continue;
+  if (!hasTagInRange(msg, RANGE.SERVER_META_LO, RANGE.SERVER_META_HI)) continue;
   found++;
   console.log(`settings object id=${id}`);
   for (const f of msg.fields) {
