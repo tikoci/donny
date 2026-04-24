@@ -24,7 +24,7 @@ const TC_BOOL_TRUE = 0x01; // 0 bytes
 const TC_U32 = 0x08; // 4 bytes LE
 const TC_U8 = 0x09; // 1 byte
 const TC_U64 = 0x10; // 8 bytes LE
-const TC_BYTES_16 = 0x18; // fixed 16 bytes (notification padding fields)
+const TC_BYTES_16 = 0x18; // fixed 16 bytes (e.g. IPv6 addresses in notification fields)
 const TC_BYTES_4 = 0x20; // fixed 4 bytes (rare fixed-width fields)
 const TC_STR = 0x21; // 1-byte length prefix + UTF-8 bytes
 const TC_BYTES = 0x31; // 1-byte length prefix + raw bytes
@@ -41,15 +41,15 @@ export const TAG = {
   DEVICE_DNS_MODE: 0x1f42,
   DEVICE_POLL_INTERVAL: 0x1f43,
   DEVICE_MAC: 0x1f44,
-  DEVICE_TYPE_ID: 0x1f45,
+  DEVICE_MAC_LOOKUP: 0x1f45,  // binary flag: 0=off 1=on (C++ Device_MacLookup)
   DEVICE_USERNAME: 0x1f46,
   DEVICE_PASSWORD: 0x1f47,
   DEVICE_ENABLED: 0x1f49,
   DEVICE_ROUTER_OS: 0x1f4a,
   DEVICE_SNMP_ENABLED: 0x1f4b,
-  DEVICE_SNMP_PROFILE: 0x1f4c,
+  DEVICE_TYPE_ID: 0x1f4c,     // u32 DeviceType object ID (C++ Device_TypeId); 0xFFFFFFFF = none
   DEVICE_AGENT_ID: 0x1f4d,
-  DEVICE_PARENT_ID: 0x1f4e,
+  DEVICE_SNMP_PROFILE: 0x1f4e, // u32 SNMP profile object ID (C++ Device_SnmpProfileId); 0xFFFFFFFF = none
   DEVICE_AUTO_DISCOVER: 0x1f51,
   DEVICE_ORDER: 0x1f52,
   DEVICE_COLOR_OVERRIDE: 0x1f53,
@@ -89,7 +89,8 @@ export const TAG = {
   SVC_INTERVAL: 0xbf71,
   // Notification (0x3E80–0x3E9B)
   NOTIF_ENABLED: 0x3e80,
-  NOTIF_PADDING: 0x3e9a, // tcode 0x18 — 16-byte reserved-zero padding
+  NOTIF_MAIL_V6: 0x3e9a,  // tcode 0x18 — 16-byte IPv6 mail server address (all-zero = not configured)
+  NOTIF_MAIL_DNS: 0x3e9b, // str mail server DNS name (empty = not configured)
   // Map node placement (0x5DC0–0x5DDF)
   NODE_MAP_ID: 0x5dc0,
   NODE_DEVICE_ID: 0x5dc4,
@@ -596,10 +597,10 @@ export function encodeDevice(opts: {
   s1.addBool(0x1f51, false); // secure_mode
   s1.addU8(TAG.DEVICE_DNS_MODE, isDns ? 1 : 0);
   s1.addU8(TAG.DEVICE_POLL_INTERVAL, 60);
-  s1.addU8(TAG.DEVICE_TYPE_ID, 1);
+  s1.addU8(TAG.DEVICE_MAC_LOOKUP, 1);
+  s1.addU32(TAG.DEVICE_TYPE_ID, 0xffffffff);
+  s1.addU8(0x1f4d, 0); // agent id
   s1.addU32(TAG.DEVICE_SNMP_PROFILE, snmpProfileId);
-  s1.addU8(0x1f4d, 0); // custom_field_ref
-  s1.addU32(0x1f4e, 0); // custom2
   const s1Bytes = s1.toBytes();
   const s1Count = 15;
 

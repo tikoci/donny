@@ -37,6 +37,8 @@ The binary serialization format used throughout RouterOS IPC, WinBox, and dude.d
 
 **Magic**: `4D 32 01 00 FF 88 01 00` (8 bytes)
 
+The magic is structured, not opaque: `4D 32` = 2-byte magic marker, followed by a full `DataFormat` field (`tag=0x0001, marker=0xFF, tcode=0x88`) with a 1-element u32 array whose value identifies the object type (e.g. `0x03`=ServerConfig, `0x0F`=Device, `0x18`=Notification). Both ends of a decode reach offset 12 before reading object fields — `donny` treats bytes 2–7 as part of the magic constant and discards them along with the u32 at offset 8.
+
 **Structure**:
 
 1. Magic (8 bytes)
@@ -57,7 +59,7 @@ Type codes:
 | `0x08` | u32 | 4 |
 | `0x09` | u8 | 1 |
 | `0x10` | u64 | 8 |
-| `0x18` | bytes_16 | fixed 16 (notification padding) |
+| `0x18` | bytes_16 | fixed 16 (IPv6 address fields, e.g. notification mail server) |
 | `0x20` | bytes_4 | fixed 4 (rare fixed-width fields) |
 | `0x21` | str | 1-byte len prefix + bytes |
 | `0x31` | bytes | 1-byte len prefix + bytes |
@@ -74,18 +76,18 @@ field is `SELF_ID` (`0x0001`), look at the next type-specific tag to classify.
 | `0x07D0–0x07DF` | Chart / Panel element | `0x07D0`=type str ("Chart Line"\|"Panel Element"), `0x07D1`=enabled bool |
 | `0x1000–0x101F` | Server state metadata | `0x1001`=root_id_list, `0x1015`=timestamp_array, `0x0FEF`=color palette — one per db |
 | `0x1770–0x177F` | Network scanner config / Syslog rule | boolean auto-discovery flags; syslog rule objects start at `0x1770` — one scanner config per db |
-| `0x1F40–0x1F5A` | Device | `0x1F40`=ip, `0x1F45`=type_id, `0x1F46/7`=credentials |
+| `0x1F40–0x1F5A` | Device | `0x1F40`=ip, `0x1F45`=mac_lookup (bool), `0x1F46/7`=credentials, `0x1F4C`=type_id (DeviceType ref), `0x1F4E`=snmp_profile_id |
 | `0x2328–0x2337` | Group | `0x2328`=member_id_list (u32[]) |
-| `0x2710–0x271F` | Device type template | 17 built-ins: MikroTik Device, Bridge, Router, Switch, RouterOS, Windows Computer, HP Jet Direct, FTP/Mail/Web/DNS/POP3/IMAP4/News/Time Server, Printer, Some Device. `0x2710`=default probe IDs, `0x2712`=active probe IDs, `0x2713`=parent type id, `0x2714`=poll interval u8, `0x2715`=URL template |
+| `0x2710–0x271F` | Device type template | 17 built-ins: MikroTik Device, Bridge, Router, Switch, RouterOS, Windows Computer, HP Jet Direct, FTP/Mail/Web/DNS/POP3/IMAP4/News/Time Server, Printer, Some Device. `0x2710`=required service IDs (u32[]), `0x2711`=allowed service IDs (u32[]), `0x2712`=ignored service IDs (u32[]), `0x2713`=image asset ID, `0x2714`=image scale, `0x2715`=URL template. Arrays reference ProbeTemplate/Service IDs. |
 | `0x2AF8–0x2AFA` | Network / Subnet group | `0x2AF8`=subnet list (u32 pairs: ip+mask), `0x2AF9`=map_id |
 | `0x2EE0–0x2EF4` | Probe config | `0x2EE1`=device_id, `0x2EE3`=type_id, `0x2EEC`=service_id |
 | `0x36B0–0x36D1` | Probe template | `0x36B0`=kind str, `0x36B2`=port |
 | `0x3C68–0x3C72` | SNMP profile | |
-| `0x3E80–0x3E9B` | Notification | `0x3E9A` = 16-byte reserved-zero padding (tcode `0x18`) |
+| `0x3E80–0x3E9B` | Notification | `0x3E9A` = IPv6 mail server address (tcode `0x18`, 16 bytes; all-zero = not configured); `0x3E9B` = mail server DNS name (str; empty = not configured) |
 | `0x4A38–0x4A3F` | Open panel | ephemeral; absent in offline databases |
 | `0x4E20–0x4E23` | Active session | ephemeral; absent in offline databases |
 | `0x5208–0x520F` | Service description | annotation on a probe template; starts with `SELF_ID`. `0x5208`=parent probe template id, `0x5209`=creation timestamp |
-| `0x55F0–0x55F9` | Topology link/edge | `0x55F1`=device_a_id, `0x55F4/5`=device_b_id |
+| `0x55F0–0x55F9` | Topology link/edge | `0x55F1`=device_a_id (C++ `Link_MasterDevice`); `0x55F4`=probe type id (link check); `0x55F5`=map element or device_b_id (C++ `Link_NetMapElementID`); `0x55F6`=notification_id |
 | `0x59D8–0x59DB` | Link type | |
 | `0x5DC0–0x5DDF` | Map node placement | `0x5DC0`=map_id, `0x5DC4`=device_id, `0x5DC5/6`=x/y px |
 | `0x61A8–0x61FA` | Map canvas container | 85 fields: background, grid, palettes, label templates, font blobs |
