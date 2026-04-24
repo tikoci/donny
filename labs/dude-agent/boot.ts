@@ -95,8 +95,6 @@ const SERVER_ETHER2_IP = "192.168.100.1";
 const AGENT_ETHER2_IP = "192.168.100.2";
 const LINK_NETMASK = "24";
 
-// TZSP destination on the host — QEMU user-mode gateway (10.0.2.2) is the host
-const TZSP_HOST = "10.0.2.2";
 const TZSP_PORT = 37008;
 
 // ---------------------------------------------------------------------------
@@ -107,18 +105,6 @@ const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
 function section(label: string) {
   console.log(`\n─── ${label} ${"─".repeat(Math.max(0, 60 - label.length))}`);
-}
-
-async function waitForDude(instance: ChrInstance, timeoutMs = 30_000): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const out = await instance.exec("/dude/print");
-      if (out.output.includes("enabled: yes")) return true;
-    } catch { /* not ready yet */ }
-    await sleep(2000);
-  }
-  return false;
 }
 
 /** Check if tshark is available on the host. */
@@ -263,7 +249,7 @@ async function main() {
 
   server = await QuickCHR.start({
     name: "dude-server",
-    version: CHANNEL,
+    channel: CHANNEL,
     background: true,
     secureLogin: false,
     packages: ["dude"],
@@ -293,7 +279,7 @@ async function main() {
 
   agent = await QuickCHR.start({
     name: "dude-agent",
-    version: CHANNEL,
+    channel: CHANNEL,
     background: true,
     secureLogin: false,
     packages: ["dude"],
@@ -334,7 +320,13 @@ async function main() {
   console.log("Setting server mode: /dude/set enabled=yes data-directory=dude");
   await server.exec("/dude/set enabled=yes data-directory=dude");
 
-  const serverDudeUp = await waitForDude(server, 30_000);
+  const serverDudeUp = await server.waitFor(
+    async () => {
+      const out = await server!.exec("/dude/print");
+      return out.output.includes("enabled: yes");
+    },
+    30_000
+  );
   if (!serverDudeUp) {
     console.warn("dude-server: Dude did not report enabled=yes within timeout");
   }
@@ -360,7 +352,7 @@ async function main() {
 
     tsharkProc = Bun.spawn(
       [
-        "tshark", "-i", "lo0",
+        "tshark", "-i", server.captureInterface,
         "-f", `udp port ${TZSP_PORT}`,
         "-w", CAPTURE_FILE,
         "-a", `duration:${CAPTURE_SECS}`,
@@ -376,9 +368,9 @@ async function main() {
 
   // Start the RouterOS TZSP sniffer — traffic flows to tshark now.
   // Capture ALL interfaces so we see both ether2 (L2 link) and ether1 (probe traffic).
-  console.log(`\nConfiguring TZSP: all interfaces → ${TZSP_HOST}:${TZSP_PORT}`);
+  console.log(`\nConfiguring TZSP: all interfaces → ${server.tzspGatewayIp}:${TZSP_PORT}`);
   await server.exec(`
-    /tool/sniffer/set streaming-enabled=yes streaming-server=${TZSP_HOST}:${TZSP_PORT} filter-interface=""
+    /tool/sniffer/set streaming-enabled=yes streaming-server=${server.tzspGatewayIp}:${TZSP_PORT} filter-interface=""
     /tool/sniffer/start
   `);
   const snifferState = await server.exec("/tool/sniffer/print");
