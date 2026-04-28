@@ -247,26 +247,86 @@ ORDER BY o.time DESC;
 - **Schema version is `1`.** Future breaking changes will bump it; check
   `_meta.schema_version` when consuming the export programmatically.
 
-## Round-trip / Restoring a `dude.db`
+## Round-trip / Restoring a `dude.db` (editable)
 
-The normalized DB also carries an internal `_raw_objs (id INTEGER PK, obj BLOB)`
-table that mirrors every source `objs` row verbatim. The reverse transform
-(`donny denormalize`) uses only `_raw_objs` plus the time-series tables
-(`outages`, `chart_*`) to rebuild a fresh `dude.db` that is **byte-identical
-at the blob level** to the original.
+The reverse transform (`donny denormalize`) is **encoder-first with raw
+fallback**, so the normalized DB is the editable source of truth — you can
+add, modify, and delete rows in the normalized tables and rebuild a working
+`dude.db` from them.
 
-```sh
-donny normalize    dude.db        normalized.db
-donny denormalize  normalized.db  rebuilt.db   # byte-identical objs blobs
+### Per-row dispatch
+
+Every modeled object table carries a `_dirty INTEGER NOT NULL DEFAULT 0`
+column. For each row id, denormalize chooses one of three paths:
+
+| Row state                                  | What happens                                             |
+| ------------------------------------------ | -------------------------------------------------------- |
+| Has raw blob (`_raw_objs`) AND `_dirty=0`  | **Raw fallback** — original Nova blob copied verbatim    |
+| Modeled table has encoder AND (`_dirty=1` OR no raw) | **Re-encode** from normalized columns           |
+| No encoder AND no raw                      | **Dropped** (counted in `gapReport.dropped`)             |
+
+Raw fallback is byte-identical, so an unedited round-trip is still
+SHA-1-identical to the source. Editing or inserting a row sets up an encode
+on the next `denormalize`.
+
+### Editing workflow
+
+```sql
+-- rename an existing device:
+UPDATE devices SET name = 'core-router-01', _dirty = 1 WHERE id = 12;
+
+-- add a brand new device (no raw blob → forced encode):
+INSERT INTO devices (id, name, address, _dirty)
+VALUES (9000001, 'new-edge-01', '10.20.30.40', 0);
+
+-- add a map node placement + a topology link between two devices:
+INSERT INTO map_elements   (id, device_id, x, y, _dirty) VALUES (9000002, 9000001, 100, 200, 0);
+INSERT INTO topology_links (id, device_a_id, device_b_id, _dirty) VALUES (9000003, 9000001, 12, 0);
 ```
 
-Verified on a real-world database (~2,200 objects, ~4.4M chart rows): every
-blob's SHA-1 matches the original. This is the strongest available fidelity
-guarantee — stronger than re-encoding from normalized columns, because the
-Nova TLV layer is preserved verbatim.
+Then `donny denormalize normalized.db rebuilt.db` and open `rebuilt.db` in
+The Dude — the new objects are there.
 
-The `_raw_objs` table is **internal infrastructure**, not a query surface —
-all relational queries should go through the normalized tables / views.
+### Encoder coverage (Phase 3)
+
+| Modeled table     | Encoder              | Round-trip class         |
+| ----------------- | -------------------- | ------------------------ |
+| `devices`         | `encodeDevice`       | minimal — name, address, dns_mode, device_type_id |
+| `services`        | `encodeService`      | minimal — name, type, parent_id, probe_id |
+| `probe_configs`   | `encodeProbeConfig`  | minimal — name, type, agent_id |
+| `map_elements`    | `encodeMapNode`      | minimal — map_id, device_id, x, y |
+| `topology_links`  | `encodeTopologyLink` | minimal — device_a_id, device_b_id, mastering_id |
+
+"Minimal" means: re-encoding a previously-clean row that you marked `_dirty=1`
+will preserve only the columns the encoder reads. Fields not in the
+normalized schema (e.g., a device's interfaces, MAC, custom poll-interval
+overrides) are lost on re-encode. Raw fallback (the default for unedited
+rows) preserves everything. Adding a brand-new row gets only what you supply.
+
+### Gap report
+
+`denormalize()` returns a `gapReport` that surfaces what each path covered:
+
+```ts
+gapReport: {
+  encoded:        { devices: 3, map_elements: 1, ... },  // ids re-encoded
+  rawFallback:    { devices: 116, services: 712, ... },  // ids preserved as-is
+  dropped:        0,                                     // no encoder + no raw
+  unmodeledRanges:{ snmp_profiles: 5, unknown: 486, ... } // raw blobs by detected Nova range
+}
+```
+
+`unmodeledRanges` is the **explicit list of missing encoders** — every entry
+there is a Nova object class that currently has no normalized columns and
+relies entirely on raw fallback. That is the to-do list for future phases.
+
+### `_raw_objs` is transitional fallback
+
+`_raw_objs (id INTEGER PK, obj BLOB)` mirrors every source `objs` row. It
+exists so that unedited rows and unmodeled types still round-trip. As more
+encoders are added, fewer rows will need it. Treat it as internal storage,
+not a query surface — relational queries should go through the normalized
+tables / views.
 
 ```ts
 import { denormalize, denormalizeToFile, DUDE_DB_SCHEMA_SQL } from "donny";

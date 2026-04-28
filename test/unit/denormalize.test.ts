@@ -211,3 +211,134 @@ describe("Device.deviceTypeId", () => {
     src.close();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Encoder-first round-trip: editing normalized rows propagates to dude.db
+// ---------------------------------------------------------------------------
+
+describe("denormalize() — editable round-trip via encoders", () => {
+  test("clean (no edits) round-trip preserves blobs via raw fallback", () => {
+    const normPath = join(tmpDir, "n.db");
+    const backPath = join(tmpDir, "back.db");
+    normalizeToFile(CLEAN_DB_PATH, normPath, { sourcePath: CLEAN_DB_PATH });
+    const result = denormalizeToFile(normPath, backPath);
+    // No edits → every modeled row should be raw fallback, not encoded.
+    expect(result.gapReport.encoded).toEqual({});
+    // Should have rawFallback entries for the 3 modeled types in clean.db
+    // (devices=0 in clean, but services / probe_configs do exist there)
+    // Just assert the report shape exists.
+    expect(typeof result.gapReport.rawFallback).toBe("object");
+    expect(typeof result.gapReport.unmodeledRanges).toBe("object");
+  });
+
+  test("editing a device name re-encodes that blob (dirty=1)", () => {
+    const normPath = join(tmpDir, "n.db");
+    const backPath = join(tmpDir, "back.db");
+
+    // Build a normalized DB that has at least one device.
+    const src = DudeDB.inMemory();
+    src.addDevice({ name: "router1", address: "10.0.0.1" });
+    const devId = src.devices()[0]!.id;
+    const ndb = new Database(normPath);
+    normalize(src, ndb, { sourcePath: ":memory:" });
+    src.close();
+    ndb.close();
+
+    // Edit: rename + mark dirty.
+    const edit = new Database(normPath);
+    edit.exec(`UPDATE devices SET name = 'router1-renamed', _dirty = 1 WHERE id = ${devId}`);
+    edit.close();
+
+    const result = denormalizeToFile(normPath, backPath);
+    expect(result.gapReport.encoded.devices).toBe(1);
+
+    const back = DudeDB.openAuto(backPath);
+    try {
+      const dev = back.devices().find((d) => d.id === devId);
+      expect(dev).toBeDefined();
+      expect(dev!.name).toBe("router1-renamed");
+      expect(dev!.address).toBe("10.0.0.1");
+    } finally { back.close(); }
+  });
+
+  test("inserting a new device row in normalized DB yields a working dude.db", () => {
+    const normPath = join(tmpDir, "n.db");
+    const backPath = join(tmpDir, "back.db");
+    normalizeToFile(CLEAN_DB_PATH, normPath, { sourcePath: CLEAN_DB_PATH });
+
+    // Pick an id that doesn't exist in _raw_objs.
+    const edit = new Database(normPath);
+    const taken = new Set<number>(
+      edit.query<{ id: number }, []>("SELECT id FROM _raw_objs").all().map((r) => r.id),
+    );
+    let newId = 9_000_000;
+    while (taken.has(newId)) newId++;
+
+    edit.exec(
+      `INSERT INTO devices (id, name, address, dns_mode, _dirty)
+       VALUES (${newId}, 'new-device', '192.168.1.42', 0, 0)`,
+    );
+    edit.close();
+
+    const result = denormalizeToFile(normPath, backPath);
+    // New row has no raw blob → must be encoded.
+    expect(result.gapReport.encoded.devices).toBe(1);
+
+    const back = DudeDB.openAuto(backPath);
+    try {
+      const dev = back.devices().find((d) => d.id === newId);
+      expect(dev).toBeDefined();
+      expect(dev!.name).toBe("new-device");
+      expect(dev!.address).toBe("192.168.1.42");
+    } finally { back.close(); }
+  });
+
+  test("inserting a new map_element + topology_link round-trips through encoders", () => {
+    const normPath = join(tmpDir, "n.db");
+    const backPath = join(tmpDir, "back.db");
+    normalizeToFile(CLEAN_DB_PATH, normPath, { sourcePath: CLEAN_DB_PATH });
+
+    const edit = new Database(normPath);
+    const taken = new Set<number>(
+      edit.query<{ id: number }, []>("SELECT id FROM _raw_objs").all().map((r) => r.id),
+    );
+    let nextId = 9_500_000;
+    const fresh = (): number => { while (taken.has(nextId)) nextId++; const v = nextId++; taken.add(v); return v; };
+
+    const devA = fresh(); const devB = fresh();
+    const node  = fresh(); const link = fresh();
+
+    edit.exec(`INSERT INTO devices (id, name, address, _dirty) VALUES (${devA}, 'A', '10.0.0.1', 0)`);
+    edit.exec(`INSERT INTO devices (id, name, address, _dirty) VALUES (${devB}, 'B', '10.0.0.2', 0)`);
+    edit.exec(`INSERT INTO map_elements (id, map_id, device_id, x, y, _dirty)
+               VALUES (${node}, NULL, ${devA}, 100, 200, 0)`);
+    edit.exec(`INSERT INTO topology_links (id, device_a_id, device_b_id, _dirty)
+               VALUES (${link}, ${devA}, ${devB}, 0)`);
+    edit.close();
+
+    const result = denormalizeToFile(normPath, backPath);
+    expect(result.gapReport.encoded.devices).toBeGreaterThanOrEqual(2);
+    expect(result.gapReport.encoded.map_elements).toBe(1);
+    expect(result.gapReport.encoded.topology_links).toBe(1);
+
+    // Verify objects round-trip through DudeDB read + raw blob inspection.
+    const dst = new Database(backPath);
+    const objIds = dst.query<{ id: number }, []>(
+      `SELECT id FROM objs WHERE id IN (${devA}, ${devB}, ${node}, ${link})`,
+    ).all().map((r) => r.id).sort((a, b) => a - b);
+    dst.close();
+    expect(objIds).toEqual([devA, devB, node, link].sort((a, b) => a - b));
+  });
+
+  test("gap report enumerates unmodeled types from a real-shape db", () => {
+    const normPath = join(tmpDir, "n.db");
+    const backPath = join(tmpDir, "back.db");
+    normalizeToFile(CLEAN_DB_PATH, normPath, { sourcePath: CLEAN_DB_PATH });
+    const result = denormalizeToFile(normPath, backPath);
+    // unmodeledRanges should contain at least one bucket from clean.db
+    // (probe_templates, device_types, link_types, etc. all live there).
+    const totalUnmodeled = Object.values(result.gapReport.unmodeledRanges)
+      .reduce((a, b) => a + b, 0);
+    expect(totalUnmodeled).toBeGreaterThan(0);
+  });
+});

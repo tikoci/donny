@@ -72,11 +72,12 @@ CREATE TABLE _table_counts (
   row_count  INTEGER NOT NULL
 );
 
--- Raw blob preservation -----------------------------------------------------
--- Every source objs row is mirrored verbatim here so the normalized DB is a
--- lossless container. denormalize() rebuilds a working dude.db from this
--- table plus the time-series tables. The normalized columns above are the
--- query surface; this table is the round-trip surface.
+-- Raw fallback for object types without encoders -----------------------------
+-- Transitional: every source objs row is mirrored here. denormalize() uses
+-- this only for object types whose encoders aren't implemented yet, AND for
+-- modeled rows that haven't been edited (_dirty=0) so unmodeled fields are
+-- preserved verbatim. As more encoders are added, reliance on this table
+-- shrinks. See \`encoder_coverage\` in _meta for current gap report.
 CREATE TABLE _raw_objs (
   id  INTEGER PRIMARY KEY,
   obj BLOB NOT NULL
@@ -141,7 +142,8 @@ CREATE TABLE devices (
   snmp_enabled    INTEGER NOT NULL DEFAULT 0,
   snmp_profile_id INTEGER REFERENCES snmp_profiles(id),
   poll_interval   INTEGER,
-  device_type_id  INTEGER REFERENCES device_types(id)
+  device_type_id  INTEGER REFERENCES device_types(id),
+  _dirty          INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_devices_name    ON devices(name);
 CREATE INDEX idx_devices_address ON devices(address);
@@ -156,7 +158,8 @@ CREATE TABLE services (
   id      INTEGER PRIMARY KEY,
   name    TEXT NOT NULL,
   unit    TEXT NOT NULL DEFAULT 's',
-  enabled INTEGER NOT NULL DEFAULT 1
+  enabled INTEGER NOT NULL DEFAULT 1,
+  _dirty  INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_services_name ON services(name);
 
@@ -166,7 +169,8 @@ CREATE TABLE probe_configs (
   service_id    INTEGER NOT NULL REFERENCES services(id),
   probe_type_id INTEGER NOT NULL REFERENCES probe_templates(id),
   enabled       INTEGER NOT NULL DEFAULT 1,
-  created_at    INTEGER
+  created_at    INTEGER,
+  _dirty        INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_probes_device  ON probe_configs(device_id);
 CREATE INDEX idx_probes_service ON probe_configs(service_id);
@@ -182,7 +186,8 @@ CREATE TABLE map_elements (
   map_id    INTEGER REFERENCES maps(id),
   device_id INTEGER REFERENCES devices(id),
   x         INTEGER,
-  y         INTEGER
+  y         INTEGER,
+  _dirty    INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_map_elements_map    ON map_elements(map_id);
 CREATE INDEX idx_map_elements_device ON map_elements(device_id);
@@ -193,7 +198,8 @@ CREATE TABLE topology_links (
   device_b_id     INTEGER REFERENCES devices(id),
   map_element_b_id INTEGER REFERENCES map_elements(id),
   probe_type_id   INTEGER REFERENCES probe_templates(id),
-  notification_id INTEGER REFERENCES notifications(id)
+  notification_id INTEGER REFERENCES notifications(id),
+  _dirty          INTEGER NOT NULL DEFAULT 0
 );
 
 -- Grouping ------------------------------------------------------------------

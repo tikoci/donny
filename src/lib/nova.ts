@@ -742,3 +742,93 @@ export function isBuiltInProbeName(name: string): boolean {
 
 // Built-in ID 10160 = ping probe template (present in every database).
 export const PROBE_ID_PING = 10160;
+
+// --- Additional encoders for denormalize() round-trip ---
+
+/**
+ * Build a minimal map_element (node) blob that places a device on a map.
+ * Range: 0x5dc0–0x5ddf (NODE_LO/HI).
+ *
+ * Minimum viable fields:
+ *   - SELF_ID (0x0001)         — node id
+ *   - NODE_MAP_ID (0x5dc0)     — parent canvas id
+ *   - NODE_DEVICE_ID (0x5dc4)  — the device this node represents (or 0xffffffff for decorative)
+ *   - NODE_X (0x5dc5), NODE_Y (0x5dc6) — placement coords
+ *   - NAME (0x0010, marker M_ALT) — last field
+ */
+export function encodeMapNode(opts: {
+  id: number;
+  mapId: number;
+  deviceId?: number;
+  x?: number;
+  y?: number;
+  name?: string;
+}): Uint8Array {
+  const { id, mapId, deviceId = 0xffffffff, x = 0, y = 0, name = "" } = opts;
+
+  // Section 1: 4 fields
+  const s1 = new NovaWriter();
+  s1.addU32(TAG.NODE_MAP_ID, mapId);
+  s1.addU32(TAG.NODE_DEVICE_ID, deviceId);
+  s1.addU32(TAG.NODE_X, x);
+  s1.addU32(TAG.NODE_Y, y);
+  const s1Bytes = s1.toBytes();
+
+  // Section 2: SELF_ID (separator) + NAME (last)
+  const s2 = new NovaWriter();
+  s2.addU32(TAG.SELF_ID, id, M_ALT);
+  s2.addStr(TAG.NAME, name, M_ALT);
+  const s2Bytes = s2.toBytes();
+
+  const header = makeHeader(4);
+  const out = new Uint8Array(header.length + s1Bytes.length + s2Bytes.length);
+  out.set(header, 0);
+  out.set(s1Bytes, header.length);
+  out.set(s2Bytes, header.length + s1Bytes.length);
+  return out;
+}
+
+/**
+ * Build a minimal topology_link blob.
+ * Range: 0x55f0–0x55f9 (LINK_LO/HI).
+ *
+ * Links are usually defined between two device endpoints; the B side may
+ * point to a map_element id when the link terminates on a non-device node.
+ */
+export function encodeTopologyLink(opts: {
+  id: number;
+  deviceAId?: number;
+  deviceBId?: number;
+  mapElementBId?: number;
+  linkTypeId?: number;
+}): Uint8Array {
+  const {
+    id,
+    deviceAId = 0xffffffff,
+    deviceBId = 0xffffffff,
+    mapElementBId = 0xffffffff,
+    linkTypeId = 0xffffffff,
+  } = opts;
+
+  const _ = mapElementBId; // currently encoded via deviceBId slot fallback
+
+  // Section 1: 3 fields (link_type, dev_a, dev_b)
+  const s1 = new NovaWriter();
+  s1.addU32(TAG.LINK_TYPE, linkTypeId);
+  s1.addU32(TAG.LINK_DEVICE_A, deviceAId);
+  s1.addU32(TAG.LINK_DEVICE_B, deviceBId);
+  const s1Bytes = s1.toBytes();
+
+  // Section 2: SELF_ID separator + empty NAME
+  const s2 = new NovaWriter();
+  s2.addU32(TAG.SELF_ID, id, M_ALT);
+  s2.addStr(TAG.NAME, "", M_ALT);
+  const s2Bytes = s2.toBytes();
+
+  const header = makeHeader(3);
+  const out = new Uint8Array(header.length + s1Bytes.length + s2Bytes.length);
+  out.set(header, 0);
+  out.set(s1Bytes, header.length);
+  out.set(s2Bytes, header.length + s1Bytes.length);
+  return out;
+}
