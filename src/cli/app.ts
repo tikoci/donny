@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 
-const KNOWN_COMMANDS = new Set(["setup", "wizard", "info", "list", "export", "add", "normalize", "--help", "-h", "help"]);
+const KNOWN_COMMANDS = new Set(["setup", "wizard", "info", "list", "export", "add", "normalize", "denormalize", "--help", "-h", "help"]);
 
 /** Parse --flag=value and --flag value pairs. */
 export function parseFlags(argv: string[]): { flags: Record<string, string | boolean>; positional: string[] } {
@@ -229,6 +229,31 @@ export async function runCli(argv: string[], isTTY: boolean): Promise<void> {
       break;
     }
 
+    case "denormalize": {
+      const inputPath = positional[0];
+      const outputPath = positional[1];
+      if (!inputPath || !outputPath) {
+        console.error("Error: usage: donny denormalize <normalized.db> <dude.db> [--overwrite] [--skip-timeseries]");
+        process.exit(1);
+      }
+      const overwrite = bool(flags, "overwrite");
+      const skipTimeseries = bool(flags, "skip-timeseries");
+      const { denormalizeToFile } = await import("../lib/denormalize.ts");
+      const t0 = Date.now();
+      const result = denormalizeToFile(inputPath, outputPath, { overwrite, skipTimeseries });
+      const ms = Date.now() - t0;
+      console.log(`\n  Rebuilt dude.db at ${outputPath} from ${inputPath} in ${ms}ms\n`);
+      const rows = Object.entries(result.tables)
+        .filter(([, n]) => (n as number) > 0)
+        .sort(([a], [b]) => a.localeCompare(b));
+      const nameW = Math.max(18, ...rows.map(([n]) => n.length));
+      for (const [name, n] of rows) {
+        console.log(`    ${name.padEnd(nameW)}  ${String(n).padStart(8)}`);
+      }
+      console.log(`\n    ${"total".padEnd(nameW)}  ${String(result.totalRows).padStart(8)}\n`);
+      break;
+    }
+
     case "--help":
     case "-h":
     case "help":
@@ -253,6 +278,9 @@ Usage:
     --format csv|json                       output format (default: json)
     --include-credentials                   include username/password in output
   donny normalize <in> <out.db> [opts]      transform dude.db into a normalized SQLite
+    --overwrite                             replace <out.db> if it exists
+    --skip-timeseries                       skip outages and chart_values_* copy
+  donny denormalize <in.db> <out.db> [opts] rebuild a working dude.db from a normalized SQLite
     --overwrite                             replace <out.db> if it exists
     --skip-timeseries                       skip outages and chart_values_* copy
   donny add device <db> [options]           add a device with ping probe

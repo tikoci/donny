@@ -72,6 +72,16 @@ CREATE TABLE _table_counts (
   row_count  INTEGER NOT NULL
 );
 
+-- Raw blob preservation -----------------------------------------------------
+-- Every source objs row is mirrored verbatim here so the normalized DB is a
+-- lossless container. denormalize() rebuilds a working dude.db from this
+-- table plus the time-series tables. The normalized columns above are the
+-- query surface; this table is the round-trip surface.
+CREATE TABLE _raw_objs (
+  id  INTEGER PRIMARY KEY,
+  obj BLOB NOT NULL
+);
+
 -- Reference data ------------------------------------------------------------
 CREATE TABLE device_types (
   id              INTEGER PRIMARY KEY,
@@ -381,6 +391,18 @@ export function normalize(
   const counts: NormalizeStats = {};
 
   dst.transaction(() => {
+    // --- Raw blob mirror (lossless preservation) --------------------------
+    // Stream every objs row verbatim into _raw_objs. denormalize() needs
+    // this to rebuild a working dude.db. Done first so even if a normalized
+    // table fails to populate, the raw data is intact.
+    const insRaw = dst.prepare("INSERT INTO _raw_objs (id, obj) VALUES (?, ?)");
+    let nRaw = 0;
+    for (const { id, obj } of src.rawObjectBlobs()) {
+      insRaw.run(id, obj);
+      nRaw++;
+    }
+    counts._raw_objs = nRaw;
+
     // --- Reference data ----------------------------------------------------
     const insDeviceType = dst.prepare(
       "INSERT INTO device_types (id, name, parent_type_id, manage_url, built_in) VALUES (?, ?, ?, ?, ?)",
@@ -564,15 +586,14 @@ export function normalize(
     for (const d of src.devices()) {
       // device_type_id and snmp_profile_id must reference real rows or be NULL.
       const snmpId = d.snmpProfileId !== undefined && knownSnmpIds.has(d.snmpProfileId) ? d.snmpProfileId : null;
-      // Devices accessor doesn't expose device_type_id; read directly per-id is overkill here.
-      // Leave NULL for now — a future enhancement can join via a raw walk if useful.
+      const dtId = d.deviceTypeId !== undefined && knownDtIds.has(d.deviceTypeId) ? d.deviceTypeId : null;
       insDevice.run(
         d.id, d.name, d.address,
         d.address === d.name && d.address.includes(".") && !/^\d+\.\d+\.\d+\.\d+$/.test(d.address) ? 1 : 0,
         d.username ?? null, d.password ?? null,
         d.routerOS ? 1 : 0, d.snmpEnabled ? 1 : 0,
         snmpId, d.pollInterval ?? null,
-        null, // device_type_id — see note above
+        dtId,
       );
       for (const m of d.macs) {
         insMac.run(d.id, m);
@@ -765,19 +786,19 @@ interface OutageRow { serviceID: number; deviceID: number; mapID: number; time: 
 interface ChartRow  { sourceIDandTime: string | bigint | number; value: number; }
 
 function copyOutages(src: DudeDB, dst: Database): number {
-  // Reach into the underlying sqlite handle without exposing a new public method.
-  // DudeDB's `db` is private, but `outages()` already returns parsed rows.
-  // We reuse it for portability.
-  const rows = src.outages({ limit: 1_000_000_000 });
+  // DudeDB.outages() returns rows with the raw SQLite column names
+  // (serviceID/deviceID/mapID — camelCase D), not the camelCase fields the
+  // Outage interface advertises. We type the rows accordingly here.
+  const rows = src.outages({ limit: 1_000_000_000 }) as unknown as OutageRow[];
   const ins = dst.prepare(
     "INSERT INTO outages (service_id, device_id, map_id, time, status, duration) VALUES (?, ?, ?, ?, ?, ?)",
   );
   let n = 0;
   for (const r of rows) {
     ins.run(
-      r.serviceId === 0 ? null : r.serviceId,
-      r.deviceId  === 0 ? null : r.deviceId,
-      r.mapId     === 0 ? null : r.mapId,
+      r.serviceID === 0 ? null : r.serviceID,
+      r.deviceID  === 0 ? null : r.deviceID,
+      r.mapID     === 0 ? null : r.mapID,
       r.time, r.status, r.duration,
     );
     n++;

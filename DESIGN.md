@@ -5,10 +5,11 @@
 ```text
 src/
   lib/
-    nova.ts      — Nova Message TLV codec (encode + decode)
-    db.ts        — DudeDB: SQLite access via bun:sqlite
-    normalize.ts — dude.db → relational SQLite transform (schema + writer)
-    types.ts     — Domain types shared across lib and cli
+    nova.ts        — Nova Message TLV codec (encode + decode)
+    db.ts          — DudeDB: SQLite access via bun:sqlite
+    normalize.ts   — dude.db → relational SQLite transform (schema + writer)
+    denormalize.ts — relational SQLite → dude.db reverse transform
+    types.ts       — Domain types shared across lib and cli
   cli/
     index.ts     — Command router (info, list, export, add, wizard)
     wizard.ts    — Interactive @clack/prompts wizard
@@ -20,11 +21,13 @@ src/
 
 `src/cli/` wraps the library. It owns terminal output and exit codes.
 
-`src/index.ts` re-exports the public surface: `DudeDB`, all Nova codec functions and types, domain types, and the normalize APIs (`normalize`, `normalizeToFile`, `NORMALIZED_SCHEMA_SQL`).
+`src/index.ts` re-exports the public surface: `DudeDB`, all Nova codec functions and types, domain types, and the normalize/denormalize APIs (`normalize`, `normalizeToFile`, `NORMALIZED_SCHEMA_SQL`, `denormalize`, `denormalizeToFile`, `DUDE_DB_SCHEMA_SQL`).
 
 ## Normalized SQLite Export
 
 `src/lib/normalize.ts` walks every `DudeDB` accessor plus on-the-fly raw blob scans for object types not yet exposed (snmp_profiles, notifications, tools, data_sources, file_assets, map_elements, topology_links) and writes a fully relational SQLite database with foreign keys, indexes, and convenience views. The DDL lives in a single `NORMALIZED_SCHEMA_SQL` string at the top of `normalize.ts` — when changing it, also update `docs/normalized-schema.md` and bump `_meta.schema_version` if the change is breaking. See `docs/normalized-schema.md` for the user-facing schema reference and sample queries.
+
+The normalized DB also embeds an internal `_raw_objs (id, obj BLOB)` mirror of the source `objs` table. This is what enables byte-identical round-trip: `src/lib/denormalize.ts` rebuilds a fresh `dude.db` from `_raw_objs` plus the time-series tables, with SHA-1 identical blobs. Round-trip is verified on real-world data (~2,200 objects, ~4.4M chart rows). The `_raw_objs` table is internal infrastructure; query through the normalized tables/views.
 
 ## Storage: dude.db
 

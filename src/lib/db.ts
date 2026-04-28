@@ -189,6 +189,15 @@ export class DudeDB {
     }
   }
 
+  /** All raw object blobs (id + bytes) without decoding. Used by normalize() to mirror the source verbatim. */
+  *rawObjectBlobs(): Generator<{ id: number; obj: Uint8Array }> {
+    const stmt = this.db.query<ObjRow, []>("SELECT id, obj FROM objs ORDER BY id");
+    for (const row of stmt.iterate()) {
+      const obj = row.obj instanceof Buffer ? new Uint8Array(row.obj) : row.obj;
+      yield { id: row.id, obj };
+    }
+  }
+
   /** All decoded device objects. */
   devices(): Device[] {
     const out: Device[] = [];
@@ -207,6 +216,9 @@ export class DudeDB {
       const macField = msg.fields.find((f) => f.tag === TAG.DEVICE_MAC && f.val.k === "bytes");
       const macs = macField?.val.k === "bytes" ? parseMacData(macField.val.v) : [];
 
+      const rawDtId = getU32(msg, TAG.DEVICE_TYPE_ID);
+      const deviceTypeId = rawDtId === undefined || rawDtId === 0xffffffff ? undefined : rawDtId;
+
       out.push({
         id,
         name,
@@ -217,6 +229,7 @@ export class DudeDB {
         snmpEnabled: getBool(msg, TAG.DEVICE_SNMP_ENABLED) ?? false,
         snmpProfileId: getU32(msg, TAG.DEVICE_SNMP_PROFILE),
         pollInterval: getU32(msg, TAG.DEVICE_POLL_INTERVAL),
+        deviceTypeId,
         macs,
       });
     }

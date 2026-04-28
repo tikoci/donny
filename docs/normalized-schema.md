@@ -70,7 +70,7 @@ from the API.
 
 | Table                | Source tag range  | Notes |
 | -------------------- | ----------------- | ----- |
-| `devices`            | `0x1F40–0x1FA3`   | `dns_mode=1` when address is a DNS name (no IPv4 in record); `device_type_id` is currently always NULL — see Limitations |
+| `devices`            | `0x1F40–0x1FA3`   | `dns_mode=1` when address is a DNS name (no IPv4 in record); `device_type_id` references `device_types(id)` — devices with the 0xFFFFFFFF "no type" sentinel are stored as NULL |
 | `device_macs`        | continuation      | Junction: a device may have multiple MACs (RouterOS-discovered) |
 | `services`           | `0x2EE0–0x2EFF`   | `unit` defaults to `'s'` (seconds, latency); `enabled=0` for disabled services |
 | `probe_configs`      | `0x29F8–0x2A6F`   | The actual "device X uses probe Y reporting service Z" rows |
@@ -233,10 +233,6 @@ ORDER BY o.time DESC;
 
 ## Limitations
 
-- **`devices.device_type_id` is currently always NULL.** The `DudeDB.devices()`
-  accessor does not yet surface the `0x1F70` type-link tag; adding it requires
-  extending the reader. Workaround: join through `v_devices_full` once the
-  accessor is updated, or do a parallel raw-blob walk in your own code.
 - **Topology B-side resolution is partial.** `topology_links` stores a
   `map_element_b_id`, and `v_topology` resolves both endpoints via the
   `map_elements` table. Some real-world links reference decorative or virtual
@@ -250,6 +246,39 @@ ORDER BY o.time DESC;
   (name, version, port, type) — secrets are not exported.
 - **Schema version is `1`.** Future breaking changes will bump it; check
   `_meta.schema_version` when consuming the export programmatically.
+
+## Round-trip / Restoring a `dude.db`
+
+The normalized DB also carries an internal `_raw_objs (id INTEGER PK, obj BLOB)`
+table that mirrors every source `objs` row verbatim. The reverse transform
+(`donny denormalize`) uses only `_raw_objs` plus the time-series tables
+(`outages`, `chart_*`) to rebuild a fresh `dude.db` that is **byte-identical
+at the blob level** to the original.
+
+```sh
+donny normalize    dude.db        normalized.db
+donny denormalize  normalized.db  rebuilt.db   # byte-identical objs blobs
+```
+
+Verified on a real-world database (~2,200 objects, ~4.4M chart rows): every
+blob's SHA-1 matches the original. This is the strongest available fidelity
+guarantee — stronger than re-encoding from normalized columns, because the
+Nova TLV layer is preserved verbatim.
+
+The `_raw_objs` table is **internal infrastructure**, not a query surface —
+all relational queries should go through the normalized tables / views.
+
+```ts
+import { denormalize, denormalizeToFile, DUDE_DB_SCHEMA_SQL } from "donny";
+import { Database } from "bun:sqlite";
+
+// File → file
+const result = denormalizeToFile("normalized.db", "rebuilt.db", { overwrite: true });
+console.log(result.counts); // { objs, outages, chart_raw, ... }
+```
+
+Pass `{ skipTimeseries: true }` to rebuild only `objs` (useful when the
+normalized DB has been edited and you want a clean structural rebuild).
 
 ## Programmatic API
 

@@ -31,6 +31,8 @@ export interface Device {
   snmpEnabled: boolean;
   snmpProfileId?: number;
   pollInterval?: number;
+  /** Device type object ID (refs DeviceType). 0xFFFFFFFF sentinel surfaces as undefined. */
+  deviceTypeId?: number;
   /** Colon-separated MAC addresses observed on this device. */
   macs: string[];
 }

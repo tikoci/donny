@@ -42,6 +42,19 @@ export type {
   NormalizeToFileOptions,
 } from "./lib/normalize.ts";
 
+// Denormalize (rebuild dude.db from normalized SQLite)
+export {
+  denormalize,
+  denormalizeToFile,
+  DUDE_DB_SCHEMA_SQL,
+} from "./lib/denormalize.ts";
+export type {
+  DenormalizeStats,
+  DenormalizeResult,
+  DenormalizeOptions,
+  DenormalizeToFileOptions,
+} from "./lib/denormalize.ts";
+
 // Nova Message codec (low-level)
 export {
   NOVA_MAGIC,

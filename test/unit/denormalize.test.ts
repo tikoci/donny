@@ -1,0 +1,213 @@
+/**
+ * denormalize() tests — verify the normalized-SQLite → dude.db reverse
+ * transform is byte-identical at the blob level, and that round-tripping
+ * through normalize → denormalize → normalize preserves both raw blobs
+ * and decoded structure.
+ */
+
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { Database } from "bun:sqlite";
+import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import {
+  DudeDB,
+  normalize, normalizeToFile,
+  denormalize, denormalizeToFile,
+  DUDE_DB_SCHEMA_SQL,
+} from "../../src/index.ts";
+
+const CLEAN_DB_PATH = "clean.db";
+
+let tmpDir: string;
+beforeEach(() => { tmpDir = mkdtempSync(join(tmpdir(), "donny-denorm-")); });
+afterEach(() => { try { rmSync(tmpDir, { recursive: true, force: true }); } catch {} });
+
+function blobAggregateSha1(dbPath: string): string {
+  const db = new Database(dbPath);
+  const rows = db.query<{ id: number; obj: Uint8Array | Buffer }, []>(
+    "SELECT id, obj FROM objs ORDER BY id",
+  ).all();
+  db.close();
+  const h = createHash("sha1");
+  for (const { id, obj } of rows) {
+    const idBuf = Buffer.alloc(8);
+    idBuf.writeBigUInt64LE(BigInt(id));
+    h.update(idBuf);
+    h.update(obj instanceof Buffer ? obj : Buffer.from(obj));
+  }
+  return h.digest("hex");
+}
+
+function rowCount(dbPath: string, table: string): number {
+  const db = new Database(dbPath);
+  const n = db.query<{ n: number }, []>(`SELECT COUNT(*) AS n FROM ${table}`).get()?.n ?? 0;
+  db.close();
+  return n;
+}
+
+describe("DUDE_DB_SCHEMA_SQL", () => {
+  test("creates the canonical dude.db tables", () => {
+    const db = new Database(":memory:");
+    db.exec(DUDE_DB_SCHEMA_SQL);
+    const tables = db.query<{ name: string }, []>(
+      "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+    ).all().map((r) => r.name);
+    expect(tables).toEqual([
+      "chart_values_10min",
+      "chart_values_1day",
+      "chart_values_2hour",
+      "chart_values_raw",
+      "objs",
+      "outages",
+    ]);
+    db.close();
+  });
+});
+
+describe("denormalize(clean.db round-trip)", () => {
+  test("byte-identical objs blobs after normalize → denormalize", () => {
+    const norm = join(tmpDir, "n.db");
+    const back = join(tmpDir, "back.db");
+    normalizeToFile(CLEAN_DB_PATH, norm);
+    denormalizeToFile(norm, back);
+
+    expect(blobAggregateSha1(back)).toBe(blobAggregateSha1(CLEAN_DB_PATH));
+    expect(rowCount(back, "objs")).toBe(rowCount(CLEAN_DB_PATH, "objs"));
+  });
+
+  test("rebuilt dude.db opens with DudeDB.openAuto and yields identical decoded counts", () => {
+    const norm = join(tmpDir, "n.db");
+    const back = join(tmpDir, "back.db");
+    normalizeToFile(CLEAN_DB_PATH, norm);
+    denormalizeToFile(norm, back);
+
+    const a = DudeDB.openAuto(CLEAN_DB_PATH);
+    const b = DudeDB.openAuto(back);
+    try {
+      expect(b.devices().length).toBe(a.devices().length);
+      expect(b.probeTemplates().length).toBe(a.probeTemplates().length);
+      expect(b.deviceTypes().length).toBe(a.deviceTypes().length);
+      expect(b.linkTypes().length).toBe(a.linkTypes().length);
+      expect(b.maps().length).toBe(a.maps().length);
+      expect(b.syslogRules().length).toBe(a.syslogRules().length);
+      expect(b.stats().objects).toBe(a.stats().objects);
+    } finally { a.close(); b.close(); }
+  });
+
+  test("normalize → denormalize → normalize yields stable row counts", () => {
+    const n1 = join(tmpDir, "n1.db");
+    const back = join(tmpDir, "back.db");
+    const n2 = join(tmpDir, "n2.db");
+    const r1 = normalizeToFile(CLEAN_DB_PATH, n1);
+    denormalizeToFile(n1, back);
+    const r2 = normalizeToFile(back, n2);
+    expect(r2.tables).toEqual(r1.tables);
+    expect(r2.totalRows).toBe(r1.totalRows);
+  });
+
+  test("rejects a source missing _raw_objs", () => {
+    const naked = join(tmpDir, "naked.db");
+    const db = new Database(naked);
+    db.exec("CREATE TABLE foo (id INTEGER)");
+    db.close();
+    expect(() => denormalizeToFile(naked, join(tmpDir, "out.db"))).toThrow(/_raw_objs/);
+  });
+
+  test("refuses to overwrite existing destination by default", () => {
+    const norm = join(tmpDir, "n.db");
+    const back = join(tmpDir, "back.db");
+    normalizeToFile(CLEAN_DB_PATH, norm);
+    denormalizeToFile(norm, back);
+    expect(() => denormalizeToFile(norm, back)).toThrow(/destination exists/);
+  });
+
+  test("overwrite=true replaces existing destination", () => {
+    const norm = join(tmpDir, "n.db");
+    const back = join(tmpDir, "back.db");
+    normalizeToFile(CLEAN_DB_PATH, norm);
+    denormalizeToFile(norm, back);
+    const r2 = denormalizeToFile(norm, back, { overwrite: true });
+    expect(r2.tables.objs).toBeGreaterThan(0);
+  });
+
+  test("skipTimeseries=true zeroes the time-series counts but copies objs", () => {
+    const norm = join(tmpDir, "n.db");
+    const back = join(tmpDir, "back.db");
+    normalizeToFile(CLEAN_DB_PATH, norm);
+    const r = denormalizeToFile(norm, back, { skipTimeseries: true });
+    expect(r.tables.objs).toBeGreaterThan(0);
+    expect(r.tables.outages).toBe(0);
+    expect(r.tables.chart_values_raw).toBe(0);
+    expect(r.tables.chart_values_10min).toBe(0);
+  });
+});
+
+describe("denormalize() — synthetic round-trip with time-series", () => {
+  test("outages and chart_values_* survive normalize → denormalize", () => {
+    // Build a fresh DudeDB, add a device, write a chart value + an outage.
+    const src = DudeDB.inMemory();
+    src.addDevice({ name: "host", address: "10.0.0.1" });
+    const services = src.services();
+    expect(services.length).toBe(1);
+    const sid = services[0]!.id;
+    const ts = 1_700_000_000;
+
+    // @ts-expect-error — private db handle for test injection
+    const srcDb = src.db as Database;
+    const tasi = (BigInt(ts) << 32n) | BigInt(sid);
+    const sourceIDandTime = (BigInt(sid) << 32n) | BigInt(ts);
+    srcDb.exec(
+      `INSERT INTO outages (timeAndServiceID, serviceID, deviceID, mapID, time, status, duration)
+       VALUES (${tasi.toString()}, ${sid}, 0, 0, ${ts}, 1, 42)`,
+    );
+    srcDb.exec(
+      `INSERT INTO chart_values_10min (sourceIDandTime, value)
+       VALUES (${sourceIDandTime.toString()}, 0.555)`,
+    );
+
+    // Normalize via in-memory destination, then denormalize to a file.
+    const normPath = join(tmpDir, "syn.norm.db");
+    const normDb = new Database(normPath);
+    normalize(src, normDb, { sourcePath: ":memory:" });
+    src.close();
+    normDb.close();
+
+    const backPath = join(tmpDir, "syn.back.db");
+    const r = denormalizeToFile(normPath, backPath);
+    expect(r.tables.objs).toBeGreaterThanOrEqual(1);
+    expect(r.tables.outages).toBe(1);
+    expect(r.tables.chart_values_10min).toBe(1);
+
+    // Verify via fresh DudeDB read.
+    // Note: DudeDB.outages() returns raw SQL column names (serviceID etc.)
+    // — that's a pre-existing wart in db.ts; we just check the field
+    // values via the underlying column names.
+    const back = DudeDB.openAuto(backPath);
+    try {
+      const outages = back.outages() as unknown as Array<Record<string, number>>;
+      expect(outages.length).toBe(1);
+      expect(outages[0]!.time).toBe(ts);
+      expect(outages[0]!.duration).toBe(42);
+      expect(outages[0]!.serviceID ?? outages[0]!.serviceId).toBe(sid);
+
+      const metrics = back.metrics(sid, "10min");
+      expect(metrics.length).toBe(1);
+      expect(metrics[0]!.timestamp).toBe(ts);
+      expect(metrics[0]!.value).toBeCloseTo(0.555);
+    } finally { back.close(); }
+  });
+});
+
+describe("Device.deviceTypeId", () => {
+  test("decoder surfaces device_type_id (skipping 0xFFFFFFFF sentinel)", () => {
+    // clean.db has no devices, so this asserts the field is at least present
+    // on the type and DOES NOT end up as 0xFFFFFFFF for normal-add devices.
+    const src = DudeDB.inMemory();
+    src.addDevice({ name: "h", address: "10.0.0.1" });
+    const dev = src.devices()[0]!;
+    expect(dev.deviceTypeId).toBeUndefined(); // sentinel filtered out
+    src.close();
+  });
+});

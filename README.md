@@ -36,10 +36,14 @@ donny add device <db> [options]           add a device with ping probe
 donny normalize <input> <output.db>       export to relational SQLite
   --overwrite                             replace existing destination
   --skip-timeseries                       skip chart_* / outages copy
+donny denormalize <input.db> <output.db>  rebuild dude.db from normalized
+  --overwrite                             replace existing destination
+  --skip-timeseries                       skip chart_* / outages copy
 ```
 
 See [docs/normalized-schema.md](docs/normalized-schema.md) for the
-normalized schema reference and sample SQL queries.
+normalized schema reference, sample SQL queries, and round-trip
+fidelity guarantees.
 
 ## Library
 
