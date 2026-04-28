@@ -159,6 +159,20 @@ export function assertClientConnectMapping(options: ClientConnectMappingAssertio
         };
       }
     }
+
+    const added = object.addedFields.find((field) => field.tag === TAG.SYS_LAST_CLIENT_CONNECT);
+    if (added) {
+      const afterValue = numericValue(added.value);
+      if (afterValue !== undefined && afterValue > 0) {
+        return {
+          objectId: object.id,
+          beforeValue: undefined,
+          afterValue,
+          fieldKey: added.key,
+          diff,
+        };
+      }
+    }
   }
 
   throw new Error(

@@ -153,4 +153,38 @@ describe("Dude DB diff", () => {
       rmSync(scratchAfter, { force: true });
     }
   });
+
+  test("asserts client-connect mapping when 0x1017 is newly added in after", () => {
+    // Synthetic before has no SYS_LAST_CLIENT_CONNECT field; after introduces one.
+    rmSync(scratchBefore, { force: true });
+    const beforeDb = new Database(scratchBefore);
+    try {
+      beforeDb.exec("CREATE TABLE objs (id integer primary key, obj blob)");
+      // Object 10000 with only NAME — no 0x1017 yet.
+      const blob = Uint8Array.from([
+        0x4d, 0x32, 0x01, 0x00, 0xff, 0x88, 0x01, 0x00,
+        0x01, 0x00, 0x00, 0x00,
+        0x10, 0x00, 0xfe, 0x21, 0x00,
+      ]);
+      beforeDb.query("INSERT INTO objs (id, obj) VALUES (?, ?)").run(10000, blob);
+    } finally {
+      beforeDb.close();
+    }
+    writeServerMetaDb(scratchAfter, 1_777_405_999);
+
+    try {
+      const result = assertClientConnectMapping({
+        beforePath: scratchBefore,
+        afterPath: scratchAfter,
+      });
+
+      expect(result.objectId).toBe(10000);
+      expect(result.fieldKey).toBe("0x1017#0");
+      expect(result.beforeValue).toBeUndefined();
+      expect(result.afterValue).toBe(1_777_405_999);
+    } finally {
+      rmSync(scratchBefore, { force: true });
+      rmSync(scratchAfter, { force: true });
+    }
+  });
 });
