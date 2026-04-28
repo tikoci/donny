@@ -55,6 +55,21 @@ export type {
   DenormalizeToFileOptions,
 } from "./lib/denormalize.ts";
 
+// Dude DB / Nova diff helpers
+export {
+  diffDudeDbs,
+  diffDudeDbFiles,
+} from "./lib/diff.ts";
+export type {
+  AddedOrRemovedObject,
+  ChangedNovaField,
+  ChangedObject,
+  ComparableNovaField,
+  ComparableNovaValue,
+  DudeDbDiff,
+  DudeDbDiffOptions,
+} from "./lib/diff.ts";
+
 // Nova Message codec (low-level)
 export {
   NOVA_MAGIC,

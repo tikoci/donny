@@ -21,6 +21,7 @@ import {
   getU32Array,
   TAG,
 } from "../../src/index.ts";
+import { startQuickChrDude, type QuickChrDudeHarness } from "../helpers/quickchr-dude.ts";
 
 const RUN_QUICKCHR = process.env.DONNY_QUICKCHR === "1";
 const EXISTING_MACHINE = process.env.DONNY_QUICKCHR_MACHINE;
@@ -31,28 +32,20 @@ const maybeDescribe = RUN_QUICKCHR ? describe : describe.skip;
 
 maybeDescribe("quickchr Dude DNS-mode grounding", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "donny-quickchr-"));
-  let ownsMachine = false;
+  let harness: QuickChrDudeHarness | undefined;
 
   beforeAll(async () => {
-    if (EXISTING_MACHINE) return;
-    ownsMachine = true;
-    await runQuickchr([
-      "start",
-      "--name", MACHINE,
-      "--channel", "long-term",
-      "--arch", "x86",
-      "--add-package", "dude",
-      "--no-secure-login",
-      "--no-winbox",
-      "--no-api-ssl",
-      "--device-mode", "skip",
-      "--timeout-extra", "120",
-    ], TEST_TIMEOUT_MS);
+    harness = await startQuickChrDude({
+      machine: MACHINE,
+      existingMachine: !!EXISTING_MACHINE,
+      enableWinbox: false,
+      timeoutMs: TEST_TIMEOUT_MS,
+    });
   }, TEST_TIMEOUT_MS);
 
   afterAll(async () => {
     try {
-      if (ownsMachine) await runQuickchr(["remove", MACHINE], 120_000);
+      await harness?.stop();
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -63,11 +56,11 @@ maybeDescribe("quickchr Dude DNS-mode grounding", () => {
     const exportName = `donny-dns-${process.pid}.export`;
     const exportPath = join(tempDir, exportName);
 
-    await execRouterOS("/dude/set enabled=yes data-directory=dude");
-    await execRouterOS(`/dude/device/add name="${hostname}"`);
-    await execRouterOS(`/dude/export-db backup-file=${exportName}`);
+    if (!harness) throw new Error("quickchr Dude harness was not started");
+    await harness.exec("/dude/set enabled=yes data-directory=dude");
+    await harness.exec(`/dude/device/add name="${hostname}"`);
 
-    const exported = await readRouterOSFile(exportName);
+    const exported = await harness.exportDb(exportName);
     writeFileSync(exportPath, exported);
 
     const dude = DudeDB.openAuto(exportPath, { readonly: true });
@@ -86,45 +79,3 @@ maybeDescribe("quickchr Dude DNS-mode grounding", () => {
     }
   }, TEST_TIMEOUT_MS);
 });
-
-async function execRouterOS(command: string): Promise<string> {
-  return runQuickchr(["exec", MACHINE, command], 60_000);
-}
-
-async function readRouterOSFile(fileName: string): Promise<Buffer> {
-  const sizeText = await execRouterOS(`:put [/file/get [find name="${fileName}"] size]`);
-  const size = Number.parseInt(sizeText.replace(/\D/g, ""), 10);
-  if (!Number.isFinite(size) || size <= 0) {
-    throw new Error(`could not determine RouterOS file size for ${fileName}: ${sizeText}`);
-  }
-
-  const chunks: Buffer[] = [];
-  const chunkSize = 8192;
-  for (let offset = 0; offset < size; offset += chunkSize) {
-    const script = `:local r [/file/read file="${fileName}" offset=${offset} chunk-size=${chunkSize} as-value]; :put [:convert ($r->"data") to=base64]`;
-    const b64 = await execRouterOS(script);
-    chunks.push(Buffer.from(b64.replace(/\s+/g, ""), "base64"));
-  }
-  return Buffer.concat(chunks);
-}
-
-async function runQuickchr(args: string[], timeoutMs: number): Promise<string> {
-  const proc = Bun.spawn(["quickchr", ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const timeout = setTimeout(() => proc.kill(), timeoutMs);
-  try {
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
-    if (exitCode !== 0) {
-      throw new Error(`quickchr ${args.join(" ")} failed (${exitCode})\n${stdout}\n${stderr}`);
-    }
-    return stdout.trim();
-  } finally {
-    clearTimeout(timeout);
-  }
-}

@@ -8,3 +8,4 @@ dist/
 export.dude
 !clean.db
 !clean.export
+labs/dude-ui/artifacts/

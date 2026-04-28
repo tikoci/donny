@@ -157,6 +157,7 @@ export const TAG = {
   GROUP_MEMBERS: 0x2328,    // u32[] device/object ids in the group
   // Server state metadata (0x1000–0x101F) — one per database
   SYS_LAST_UPDATE: 0x1015,  // u32[] [timestamp, ...] last-write timestamps
+  SYS_LAST_CLIENT_CONNECT: 0x1017, // u32 Unix timestamp written when the Dude client connects
   SYS_ROOT_IDS: 0x1001,     // u32[] root object id list
   SYS_COLORS: 0x0fef,       // u32[] global color palette [red,blue,green,orange]
   // Auto-discovery job (0x6590–0x65AD)
