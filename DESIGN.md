@@ -27,7 +27,7 @@ src/
 
 `src/lib/normalize.ts` walks every `DudeDB` accessor plus on-the-fly raw blob scans for object types not yet exposed (snmp_profiles, notifications, tools, data_sources, file_assets, map_elements, topology_links) and writes a fully relational SQLite database with foreign keys, indexes, and convenience views. The DDL lives in a single `NORMALIZED_SCHEMA_SQL` string at the top of `normalize.ts` — when changing it, also update `docs/normalized-schema.md` and bump `_meta.schema_version` if the change is breaking. See `docs/normalized-schema.md` for the user-facing schema reference and sample queries.
 
-The normalized DB also embeds an internal `_raw_objs (id, obj BLOB)` mirror of the source `objs` table. This is what enables byte-identical round-trip: `src/lib/denormalize.ts` rebuilds a fresh `dude.db` from `_raw_objs` plus the time-series tables, with SHA-1 identical blobs. Round-trip is verified on real-world data (~2,200 objects, ~4.4M chart rows). The `_raw_objs` table is internal infrastructure; query through the normalized tables/views.
+The normalized DB also embeds an internal `_raw_objs (id, obj BLOB)` mirror of the source `objs` table. `src/lib/denormalize.ts` is now encoder-first with raw fallback: unedited modeled rows reuse `_raw_objs` verbatim, while `_dirty=1` rows and user-added rows are re-encoded from normalized columns. This preserves SHA-1 identity for untouched rows while making the normalized DB editable. `_raw_objs` remains internal infrastructure; query through the normalized tables/views.
 
 ## Storage: dude.db
 
@@ -72,7 +72,7 @@ Type codes:
 | `0x21` | str | 1-byte len prefix + bytes |
 | `0x31` | bytes | 1-byte len prefix + bytes |
 | `0x88` | u32_array | 2-byte count + count×4 bytes |
-| `0xA0` | compound | 2-byte count + count × nested fields |
+| `0xA0` | compound / string array | 2-byte count + nested fields, or count + u16-length strings for known string-array tags such as device DNS names |
 
 ## Object Classification by Tag Range
 
@@ -95,16 +95,16 @@ field is `SELF_ID` (`0x0001`), look at the next type-specific tag to classify.
 | `0x4A38–0x4A3F` | Open panel | ephemeral; absent in offline databases |
 | `0x4E20–0x4E23` | Active session | ephemeral; absent in offline databases |
 | `0x5208–0x520F` | Service description | annotation on a probe template; starts with `SELF_ID`. `0x5208`=parent probe template id, `0x5209`=creation timestamp |
-| `0x55F0–0x55F9` | Topology link/edge | `0x55F1`=device_a_id (C++ `Link_MasterDevice`); `0x55F4`=probe type id (link check); `0x55F5`=map element or device_b_id (C++ `Link_NetMapElementID`); `0x55F6`=notification_id |
+| `0x55F0–0x55F9` | Topology link/edge | `0x55F0`=mastering type; `0x55F1`=device_a_id (C++ `Link_MasterDevice`); `0x55F2`=master interface; `0x55F3`=speed; `0x55F4`=map_id; `0x55F5`=map element B-side (C++ `Link_NetMapElementID`); `0x55F6`=link_type_id; `0x55F7`=history; `0x55F8/9`=tx/rx data source ids |
 | `0x59D8–0x59DB` | Link type | |
 | `0x5DC0–0x5DDF` | Map node placement | `0x5DC0`=map_id, `0x5DC4`=device_id, `0x5DC5/6`=x/y px |
 | `0x61A8–0x61FA` | Map canvas container | 85 fields: background, grid, palettes, label templates, font blobs |
 | `0x6590–0x65AD` | Discovery job | `0x659A` = network subnet as LE u32 broadcast address |
 | `0x697A` | File asset | fonts, icons, certs — filter when enumerating user objects |
 | `0x7530–0x7533` | Tool | |
-| `0xBF68–0xBF71` | Service | |
+| `0xBF68–0xBF71` | Data source / time-series anchor | exposed as `Service` in donny for public API compatibility |
 | `0xC350–0xC356` | Chart line | |
-| `0xCB20–0xCB2F` | Data source | custom SNMP variable; `0xCB21`=OID expression, `0xCB22`=description |
+| `0xCB20–0xCB2F` | Function / custom expression | table currently named `data_sources` for compatibility; `0xCB21`=code/expression, `0xCB22`=description |
 
 ## export.dude Format
 
@@ -139,7 +139,7 @@ IPv4 addresses are stored as u32 little-endian: `a | (b<<8) | (c<<16) | (d<<24)`
 
 ## DNS-mode Devices
 
-Devices with a hostname instead of an IP address have no entry in tag `0x1F40` (or an empty array). They are identified by the presence of tag `0x1F41` (interface_list compound). The name field holds the FQDN and is used as the address.
+Devices with a hostname instead of an IP address have no entry in tag `0x1F40` (or an empty array). RouterOS 7.21.4 CHR with the Dude package confirms tag `0x1F41` is `Device_DnsNames` encoded as a string array; a CLI-created DNS device stores this as an empty array and carries the hostname in the `NAME` field. Tag `0x1F42` is `Device_Lookup`, not a DNS-mode flag; the normalized `dns_mode` column is derived from the absence of an IPv4 address.
 
 ## addDevice Transaction
 

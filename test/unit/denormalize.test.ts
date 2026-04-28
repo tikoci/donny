@@ -14,7 +14,7 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import {
   DudeDB,
   normalize, normalizeToFile,
-  denormalize, denormalizeToFile,
+  denormalizeToFile,
   DUDE_DB_SCHEMA_SQL,
 } from "../../src/index.ts";
 
@@ -151,7 +151,9 @@ describe("denormalize() — synthetic round-trip with time-series", () => {
     src.addDevice({ name: "host", address: "10.0.0.1" });
     const services = src.services();
     expect(services.length).toBe(1);
-    const sid = services[0]!.id;
+    const service = services[0];
+    expect(service).toBeDefined();
+    const sid = service?.id ?? 0;
     const ts = 1_700_000_000;
 
     // @ts-expect-error — private db handle for test injection
@@ -188,14 +190,18 @@ describe("denormalize() — synthetic round-trip with time-series", () => {
     try {
       const outages = back.outages() as unknown as Array<Record<string, number>>;
       expect(outages.length).toBe(1);
-      expect(outages[0]!.time).toBe(ts);
-      expect(outages[0]!.duration).toBe(42);
-      expect(outages[0]!.serviceID ?? outages[0]!.serviceId).toBe(sid);
+      const outage = outages[0];
+      expect(outage).toBeDefined();
+      expect(outage?.time).toBe(ts);
+      expect(outage?.duration).toBe(42);
+      expect(outage?.serviceID ?? outage?.serviceId).toBe(sid);
 
       const metrics = back.metrics(sid, "10min");
       expect(metrics.length).toBe(1);
-      expect(metrics[0]!.timestamp).toBe(ts);
-      expect(metrics[0]!.value).toBeCloseTo(0.555);
+      const metric = metrics[0];
+      expect(metric).toBeDefined();
+      expect(metric?.timestamp).toBe(ts);
+      expect(metric?.value).toBeCloseTo(0.555);
     } finally { back.close(); }
   });
 });
@@ -206,8 +212,9 @@ describe("Device.deviceTypeId", () => {
     // on the type and DOES NOT end up as 0xFFFFFFFF for normal-add devices.
     const src = DudeDB.inMemory();
     src.addDevice({ name: "h", address: "10.0.0.1" });
-    const dev = src.devices()[0]!;
-    expect(dev.deviceTypeId).toBeUndefined(); // sentinel filtered out
+    const dev = src.devices()[0];
+    expect(dev).toBeDefined();
+    expect(dev?.deviceTypeId).toBeUndefined(); // sentinel filtered out
     src.close();
   });
 });
@@ -238,7 +245,9 @@ describe("denormalize() — editable round-trip via encoders", () => {
     // Build a normalized DB that has at least one device.
     const src = DudeDB.inMemory();
     src.addDevice({ name: "router1", address: "10.0.0.1" });
-    const devId = src.devices()[0]!.id;
+    const device = src.devices()[0];
+    expect(device).toBeDefined();
+    const devId = device?.id ?? 0;
     const ndb = new Database(normPath);
     normalize(src, ndb, { sourcePath: ":memory:" });
     src.close();
@@ -256,8 +265,8 @@ describe("denormalize() — editable round-trip via encoders", () => {
     try {
       const dev = back.devices().find((d) => d.id === devId);
       expect(dev).toBeDefined();
-      expect(dev!.name).toBe("router1-renamed");
-      expect(dev!.address).toBe("10.0.0.1");
+      expect(dev?.name).toBe("router1-renamed");
+      expect(dev?.address).toBe("10.0.0.1");
     } finally { back.close(); }
   });
 
@@ -288,8 +297,8 @@ describe("denormalize() — editable round-trip via encoders", () => {
     try {
       const dev = back.devices().find((d) => d.id === newId);
       expect(dev).toBeDefined();
-      expect(dev!.name).toBe("new-device");
-      expect(dev!.address).toBe("192.168.1.42");
+      expect(dev?.name).toBe("new-device");
+      expect(dev?.address).toBe("192.168.1.42");
     } finally { back.close(); }
   });
 
@@ -328,6 +337,56 @@ describe("denormalize() — editable round-trip via encoders", () => {
     ).all().map((r) => r.id).sort((a, b) => a - b);
     dst.close();
     expect(objIds).toEqual([devA, devB, node, link].sort((a, b) => a - b));
+  });
+
+  test("topology link metadata + map_element_b_id survive denormalize → normalize", () => {
+    const normPath = join(tmpDir, "n.db");
+    const backPath = join(tmpDir, "back.db");
+    const roundTripNormPath = join(tmpDir, "roundtrip.db");
+    normalizeToFile(CLEAN_DB_PATH, normPath, { sourcePath: CLEAN_DB_PATH });
+
+    const edit = new Database(normPath);
+    const linkTypeId = edit.query<{ id: number }, []>("SELECT id FROM link_types ORDER BY id LIMIT 1").get()?.id;
+    expect(linkTypeId).toBeDefined();
+
+    const taken = new Set<number>(
+      edit.query<{ id: number }, []>("SELECT id FROM _raw_objs").all().map((r) => r.id),
+    );
+    let nextId = 9_600_000;
+    const fresh = (): number => { while (taken.has(nextId)) nextId++; const v = nextId++; taken.add(v); return v; };
+
+    const devA = fresh();
+    const devB = fresh();
+    const node = fresh();
+    const link = fresh();
+
+    edit.exec(`INSERT INTO devices (id, name, address, _dirty) VALUES (${devA}, 'A', '10.10.0.1', 0)`);
+    edit.exec(`INSERT INTO devices (id, name, address, _dirty) VALUES (${devB}, 'B', '10.10.0.2', 0)`);
+    edit.exec(`INSERT INTO map_elements (id, map_id, device_id, x, y, _dirty)
+               VALUES (${node}, NULL, ${devB}, 1, 2, 0)`);
+    edit.exec(`INSERT INTO topology_links (id, device_a_id, device_b_id, map_element_b_id, link_type_id, speed_bps, history, _dirty)
+               VALUES (${link}, ${devA}, NULL, ${node}, ${linkTypeId ?? 0}, 1000000000, 1, 0)`);
+    edit.close();
+
+    denormalizeToFile(normPath, backPath);
+    normalizeToFile(backPath, roundTripNormPath, { sourcePath: backPath });
+
+    const roundTrip = new Database(roundTripNormPath, { readonly: true });
+    const row = roundTrip.query<{
+      device_a_id: number | null;
+      device_b_id: number | null;
+      map_element_b_id: number | null;
+      link_type_id: number | null;
+      speed_bps: number;
+      history: number;
+    }, [number]>("SELECT device_a_id, device_b_id, map_element_b_id, link_type_id, speed_bps, history FROM topology_links WHERE id = ?").get(link);
+    expect(row?.device_a_id).toBe(devA);
+    expect(row?.device_b_id).toBeNull();
+    expect(row?.map_element_b_id).toBe(node);
+    expect(row?.link_type_id).toBe(linkTypeId);
+    expect(row?.speed_bps).toBe(1_000_000_000);
+    expect(row?.history).toBe(1);
+    roundTrip.close();
   });
 
   test("gap report enumerates unmodeled types from a real-shape db", () => {

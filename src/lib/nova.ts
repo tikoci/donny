@@ -29,7 +29,7 @@ const TC_BYTES_4 = 0x20; // fixed 4 bytes (rare fixed-width fields)
 const TC_STR = 0x21; // 1-byte length prefix + UTF-8 bytes
 const TC_BYTES = 0x31; // 1-byte length prefix + raw bytes
 const TC_U32_ARRAY = 0x88; // 2-byte count + count × 4 bytes LE
-const TC_COMPOUND = 0xa0; // 2-byte count + nested fields
+const TC_COMPOUND = 0xa0; // 2-byte count + nested fields; some Dude tags use string-array payloads
 
 /** Well-known tag constants. */
 export const TAG = {
@@ -37,7 +37,9 @@ export const TAG = {
   NAME: 0x0010,
   // Device (0x1F40–0x1F5A)
   DEVICE_IP: 0x1f40,
-  DEVICE_IFACE_LIST: 0x1f41,
+  DEVICE_DNS_NAMES: 0x1f41,
+  DEVICE_LOOKUP: 0x1f42,
+  /** @deprecated 0x1F42 is Device_Lookup; normalized dns_mode is derived from an empty IP list. */
   DEVICE_DNS_MODE: 0x1f42,
   DEVICE_POLL_INTERVAL: 0x1f43,
   DEVICE_MAC: 0x1f44,
@@ -81,7 +83,7 @@ export const TAG = {
   PROBE_KIND: 0x36b0,
   PROBE_PARENT: 0x36b1,
   PROBE_PORT: 0x36b2,
-  // Service (0xBF68–0xBF71)
+  // Data source / time-series anchor (0xBF68–0xBF71), exposed as Service in donny.
   SVC_ENABLED: 0xbf68,
   SVC_STATUS: 0xbf69,
   SVC_UNIT: 0xbf6a,
@@ -99,9 +101,16 @@ export const TAG = {
   // Map canvas container (0x61A8–0x61FA)
   CANVAS_LO_TAG: 0x61a8,
   // Link (0x55F0–0x55F9)
-  LINK_TYPE: 0x55f0,
-  LINK_DEVICE_A: 0x55f1,
-  LINK_DEVICE_B: 0x55f5,
+  LINK_MASTERING_TYPE: 0x55f0,
+  LINK_DEVICE_A: 0x55f1, // C++ Link_MasterDevice
+  LINK_MASTER_INTERFACE: 0x55f2,
+  LINK_SPEED: 0x55f3,
+  LINK_MAP_ID: 0x55f4,
+  LINK_MAP_ELEMENT_ID: 0x55f5,
+  LINK_TYPE_ID: 0x55f6,
+  LINK_HISTORY: 0x55f7,
+  LINK_TX_DATA_SOURCE_ID: 0x55f8,
+  LINK_RX_DATA_SOURCE_ID: 0x55f9,
   // File asset virtual FS
   ASSET_PARENT_DIR: 0x697a,
   // SNMP profile (0x3C68–0x3C72)
@@ -135,7 +144,7 @@ export const TAG = {
   // Service description — annotations on probe templates (0x5208–0x520F)
   SVC_DESCR_PARENT: 0x5208,  // u32 probe template id this describes
   SVC_DESCR_CREATED: 0x5209, // u32 creation timestamp (Unix seconds)
-  // Data source / custom SNMP variable (0xCB20–0xCB2F)
+  // Function / custom expression (0xCB20–0xCB2F), historically exposed as data_sources in donny.
   DS_EXPRESSION: 0xcb21,    // str OID formula e.g. "oid(concatenate(...))"
   DS_DESCRIPTION: 0xcb22,   // str human-readable description
   // Chart / panel element (0x07D0–0x07DF)
@@ -192,7 +201,7 @@ export const RANGE = {
   // Device type templates — 17 built-in types (Bridge, Router, Windows Computer, etc.)
   DEV_TYPE_LO: 0x2710,
   DEV_TYPE_HI: 0x271f,
-  // Charts and data sources (custom SNMP expressions)
+  // Charts and functions (custom expressions; table name remains data_sources for compatibility)
   CHART_LO: 0x07d0,
   CHART_HI: 0x07df,
   DATA_SOURCE_LO: 0xcb20,
@@ -240,6 +249,7 @@ export type NovaValue =
   | { k: "str"; v: string }
   | { k: "bytes"; v: Uint8Array }
   | { k: "u32[]"; v: number[] }
+  | { k: "str[]"; v: string[] }
   | { k: "compound"; v: NovaField[] };
 
 /** A single decoded TLV field. */
@@ -341,7 +351,7 @@ export function decodeBlob(data: Uint8Array): NovaMessage | null {
     if (marker !== M_STD && marker !== M_COMPACT && marker !== M_ALT) break;
 
     try {
-      const val = readValue(cur, marker, tcode);
+      const val = readValue(cur, marker, tcode, tag);
       fields.push({ tag, val });
     } catch {
       break; // truncated or unknown tcode — stop cleanly
@@ -351,7 +361,7 @@ export function decodeBlob(data: Uint8Array): NovaMessage | null {
   return { fields };
 }
 
-function readValue(cur: Cur, marker: number, tcode: number): NovaValue {
+function readValue(cur: Cur, marker: number, tcode: number, tag?: number): NovaValue {
   if (marker === M_COMPACT) return { k: "u8", v: cur.u8() };
 
   switch (tcode) {
@@ -385,6 +395,14 @@ function readValue(cur: Cur, marker: number, tcode: number): NovaValue {
     }
     case TC_COMPOUND: {
       const count = cur.u16();
+      if (tag === TAG.DEVICE_DNS_NAMES) {
+        const arr: string[] = [];
+        for (let i = 0; i < count; i++) {
+          const len = cur.u16();
+          arr.push(new TextDecoder().decode(cur.slice(len)));
+        }
+        return { k: "str[]", v: arr };
+      }
       const subs: NovaField[] = [];
       for (let i = 0; i < count && cur.left >= 4; i++) {
         const subTag = cur.u16();
@@ -392,7 +410,7 @@ function readValue(cur: Cur, marker: number, tcode: number): NovaValue {
         const subTcode = cur.u8();
         if (subMarker !== M_STD && subMarker !== M_COMPACT && subMarker !== M_ALT) break;
         try {
-          subs.push({ tag: subTag, val: readValue(cur, subMarker, subTcode) });
+          subs.push({ tag: subTag, val: readValue(cur, subMarker, subTcode, subTag) });
         } catch {
           break;
         }
@@ -433,6 +451,11 @@ export function getBool(msg: NovaMessage, tag: number): boolean | undefined {
 export function getU32Array(msg: NovaMessage, tag: number): number[] | undefined {
   const f = getField(msg, tag);
   return f?.val.k === "u32[]" ? f.val.v : undefined;
+}
+
+export function getStringArray(msg: NovaMessage, tag: number): string[] | undefined {
+  const f = getField(msg, tag);
+  return f?.val.k === "str[]" ? f.val.v : undefined;
 }
 
 /** Get the u64 value of a tag, or undefined. */
@@ -543,6 +566,16 @@ export class NovaWriter {
     return this;
   }
 
+  addStringArray(tag: number, arr: string[], marker = M_STD) {
+    this.hdr(tag, marker, TC_COMPOUND).u16(arr.length);
+    const enc = new TextEncoder();
+    for (const value of arr) {
+      const bytes = enc.encode(value);
+      this.u16(bytes.length).raw(bytes);
+    }
+    return this;
+  }
+
   addEmptyCompound(tag: number, marker = M_STD) {
     return this.hdr(tag, marker, TC_COMPOUND).u16(0);
   }
@@ -586,20 +619,20 @@ export function encodeDevice(opts: {
 
   // Section 1: 15 fields
   const s1 = new NovaWriter();
-  s1.addU32Array(TAG.DEVICE_SERVICES, [], M_STD); // services_ids: empty
-  s1.addU32Array(0x1f57, [], M_STD); // reserved_57: empty
-  s1.addEmptyCompound(TAG.DEVICE_IFACE_LIST, M_STD); // interface_list: empty compound
+  s1.addU32Array(TAG.DEVICE_EXTRA_SERVICES, [], M_STD);
+  s1.addU32Array(TAG.DEVICE_SERVICES, [], M_STD);
+  s1.addStringArray(TAG.DEVICE_DNS_NAMES, [], M_STD);
   s1.addU32Array(TAG.DEVICE_IP, ipArr, M_STD); // primary_address
   s1.addBool(TAG.DEVICE_ENABLED, true);
   s1.addBool(TAG.DEVICE_ROUTER_OS, routerOS);
   s1.addBool(TAG.DEVICE_SNMP_ENABLED, snmpEnabled);
   s1.addBool(0x1f55, false); // flag_55
-  s1.addBool(0x1f51, false); // secure_mode
-  s1.addU8(TAG.DEVICE_DNS_MODE, isDns ? 1 : 0);
+  s1.addBool(TAG.DEVICE_AUTO_DISCOVER, true);
+  s1.addU8(TAG.DEVICE_LOOKUP, 0);
   s1.addU8(TAG.DEVICE_POLL_INTERVAL, 60);
   s1.addU8(TAG.DEVICE_MAC_LOOKUP, 1);
   s1.addU32(TAG.DEVICE_TYPE_ID, 0xffffffff);
-  s1.addU8(0x1f4d, 0); // agent id
+  s1.addU32(TAG.DEVICE_AGENT_ID, 0xffffffff);
   s1.addU32(TAG.DEVICE_SNMP_PROFILE, snmpProfileId);
   const s1Bytes = s1.toBytes();
   const s1Count = 15;
@@ -615,9 +648,8 @@ export function encodeDevice(opts: {
   s2.addStr(0x1f58, ""); // custom_str_1
   s2.addStr(TAG.DEVICE_PASSWORD, password);
   s2.addStr(TAG.DEVICE_USERNAME, username);
-  // empty MAC data: 4-byte header + 2-byte zero count
-  s2.addBytes(TAG.DEVICE_MAC, Uint8Array.from([0, 0, 0, 0, 0x06, 0x00]));
-  s2.addStr(TAG.NAME, name, M_ALT); // name is always last, marker=0xFE
+  s2.addBytes(TAG.DEVICE_MAC, new Uint8Array());
+  s2.addStr(TAG.NAME, isDns ? address : name, M_ALT); // name is always last, marker=0xFE
   const s2Bytes = s2.toBytes();
 
   const header = makeHeader(s1Count);
@@ -800,23 +832,43 @@ export function encodeTopologyLink(opts: {
   deviceAId?: number;
   deviceBId?: number;
   mapElementBId?: number;
+  mapId?: number;
   linkTypeId?: number;
+  masteringType?: number;
+  masterInterface?: number;
+  speedBps?: bigint | number;
+  history?: boolean;
+  txDataSourceId?: number;
+  rxDataSourceId?: number;
 }): Uint8Array {
   const {
     id,
     deviceAId = 0xffffffff,
     deviceBId = 0xffffffff,
     mapElementBId = 0xffffffff,
+    mapId = 0xffffffff,
     linkTypeId = 0xffffffff,
+    masteringType = 0,
+    masterInterface = 0xffffffff,
+    speedBps = 0,
+    history = false,
+    txDataSourceId = 0xffffffff,
+    rxDataSourceId = 0xffffffff,
   } = opts;
+  const bSideId = mapElementBId !== 0xffffffff ? mapElementBId : deviceBId;
 
-  const _ = mapElementBId; // currently encoded via deviceBId slot fallback
-
-  // Section 1: 3 fields (link_type, dev_a, dev_b)
+  // Section 1: core LinkData fields (TheDudeToHuman: Link_* 0x55F0–0x55F9).
   const s1 = new NovaWriter();
-  s1.addU32(TAG.LINK_TYPE, linkTypeId);
+  s1.addU8(TAG.LINK_MASTERING_TYPE, masteringType);
   s1.addU32(TAG.LINK_DEVICE_A, deviceAId);
-  s1.addU32(TAG.LINK_DEVICE_B, deviceBId);
+  s1.addU32(TAG.LINK_MASTER_INTERFACE, masterInterface);
+  s1.addU64(TAG.LINK_SPEED, BigInt(speedBps));
+  s1.addU32(TAG.LINK_MAP_ID, mapId);
+  s1.addU32(TAG.LINK_MAP_ELEMENT_ID, bSideId);
+  s1.addU32(TAG.LINK_TYPE_ID, linkTypeId);
+  s1.addBool(TAG.LINK_HISTORY, history);
+  s1.addU32(TAG.LINK_TX_DATA_SOURCE_ID, txDataSourceId);
+  s1.addU32(TAG.LINK_RX_DATA_SOURCE_ID, rxDataSourceId);
   const s1Bytes = s1.toBytes();
 
   // Section 2: SELF_ID separator + empty NAME
@@ -825,7 +877,7 @@ export function encodeTopologyLink(opts: {
   s2.addStr(TAG.NAME, "", M_ALT);
   const s2Bytes = s2.toBytes();
 
-  const header = makeHeader(3);
+  const header = makeHeader(10);
   const out = new Uint8Array(header.length + s1Bytes.length + s2Bytes.length);
   out.set(header, 0);
   out.set(s1Bytes, header.length);

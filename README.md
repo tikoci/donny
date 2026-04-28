@@ -88,6 +88,18 @@ const blob = encodeDevice({ id: 99, name: "edge-01", address: "10.0.0.1" });
 
 - [Bun](https://bun.sh/) ≥ 1.1
 
+## Validation
+
+```sh
+bun run check
+bun test test/unit/
+DONNY_QUICKCHR=1 bun run test:integration:quickchr
+```
+
+The quickchr integration test boots a disposable x86 RouterOS CHR with the
+Dude package and validates selected Nova mappings against RouterOS itself. It is
+opt-in because it requires QEMU/quickchr and is slower than the unit suite.
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for Windows-first setup instructions covering PowerShell 7, Bun, VS Code, GitHub Copilot, GitHub Copilot CLI, and the repo's TypeScript and RouterOS LSP setup.

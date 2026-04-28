@@ -4,12 +4,19 @@
  * round-trip via DudeDB.addDevice().
  */
 
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { DudeDB, normalize, normalizeToFile, NORMALIZED_SCHEMA_SQL } from "../../src/index.ts";
+import {
+  DudeDB,
+  encodeMapNode,
+  encodeTopologyLink,
+  normalize,
+  normalizeToFile,
+  NORMALIZED_SCHEMA_SQL,
+} from "../../src/index.ts";
 
 const CLEAN_DB_PATH = "clean.db";
 
@@ -64,12 +71,12 @@ describe("normalize(clean.db)", () => {
     const result = normalizeToFile(CLEAN_DB_PATH, dst);
 
     const src = DudeDB.openAuto(CLEAN_DB_PATH, { readonly: true });
-    expect(result.tables.device_types!).toBe(src.deviceTypes().length);
-    expect(result.tables.probe_templates!).toBe(src.probeTemplates().length);
-    expect(result.tables.link_types!).toBe(src.linkTypes().length);
-    expect(result.tables.syslog_rules!).toBe(src.syslogRules().length);
-    expect(result.tables.devices!).toBe(src.devices().length);
-    expect(result.tables.maps!).toBe(src.maps().length);
+    expect(result.tables.device_types ?? 0).toBe(src.deviceTypes().length);
+    expect(result.tables.probe_templates ?? 0).toBe(src.probeTemplates().length);
+    expect(result.tables.link_types ?? 0).toBe(src.linkTypes().length);
+    expect(result.tables.syslog_rules ?? 0).toBe(src.syslogRules().length);
+    expect(result.tables.devices ?? 0).toBe(src.devices().length);
+    expect(result.tables.maps ?? 0).toBe(src.maps().length);
     src.close();
 
     expect(result.totalRows).toBeGreaterThan(0);
@@ -92,7 +99,7 @@ describe("normalize(clean.db)", () => {
     const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
     expect(map.source_path).toBe(CLEAN_DB_PATH);
     expect(map.generated_at).toMatch(/^\d{4}-/);
-    expect(map.schema_version).toBe("1");
+    expect(map.schema_version).toBe("2");
     db.close();
   });
 
@@ -186,7 +193,9 @@ describe("normalize() round-trip via DudeDB.addDevice()", () => {
     // sourceIDandTime = (serviceId << 32) | timestamp
     const services = src.services();
     expect(services.length).toBe(1);
-    const sid = BigInt(services[0]!.id);
+    const service = services[0];
+    expect(service).toBeDefined();
+    const sid = BigInt(service?.id ?? 0);
     const ts = 1_700_000_000;
     const key = (sid << 32n) | BigInt(ts);
     // Reach into the underlying SQLite. DudeDB doesn't expose a writer for
@@ -212,6 +221,67 @@ describe("normalize() round-trip via DudeDB.addDevice()", () => {
     expect(row?.service_id).toBe(Number(sid));
     expect(row?.timestamp).toBe(ts);
     expect(row?.value).toBeCloseTo(0.123);
+    out.close();
+  });
+
+  test("topology links preserve link metadata and resolve map-element B-side", () => {
+    const srcPath = join(tmpDir, "topology-src.db");
+    copyFileSync(CLEAN_DB_PATH, srcPath);
+    const src = DudeDB.open(srcPath);
+
+    const linkTypeId = src.linkTypes()[0]?.id;
+    expect(linkTypeId).toBeDefined();
+
+    const a = src.addDevice({ name: "a", address: "10.0.0.1" }).deviceId;
+    const b = src.addDevice({ name: "b", address: "10.0.0.2" }).deviceId;
+    const nodeId = 9_200_001;
+    const linkId = 9_200_002;
+
+    // @ts-expect-error test-only access to the underlying sqlite handle
+    const sqlite = src.db as Database;
+    sqlite.prepare("INSERT INTO objs (id, obj) VALUES (?, ?)").run(
+      nodeId,
+      encodeMapNode({ id: nodeId, mapId: 0xffffffff, deviceId: b, x: 10, y: 20 }),
+    );
+    sqlite.prepare("INSERT INTO objs (id, obj) VALUES (?, ?)").run(
+      linkId,
+      encodeTopologyLink({
+        id: linkId,
+        deviceAId: a,
+        mapElementBId: nodeId,
+        linkTypeId: linkTypeId ?? 0xffffffff,
+        speedBps: 1_000_000_000,
+        history: true,
+      }),
+    );
+
+    const dstPath = join(tmpDir, "topology-normalized.db");
+    const dst = new Database(dstPath);
+    normalize(src, dst, { sourcePath: srcPath });
+    src.close();
+    dst.close();
+
+    const out = new Database(dstPath, { readonly: true });
+    const row = out.query<{
+      device_a_id: number | null;
+      device_b_id: number | null;
+      map_element_b_id: number | null;
+      link_type_id: number | null;
+      speed_bps: number;
+      history: number;
+    }, [number]>("SELECT device_a_id, device_b_id, map_element_b_id, link_type_id, speed_bps, history FROM topology_links WHERE id = ?").get(linkId);
+    expect(row?.device_a_id).toBe(a);
+    expect(row?.device_b_id).toBeNull();
+    expect(row?.map_element_b_id).toBe(nodeId);
+    expect(row?.link_type_id).toBe(linkTypeId);
+    expect(row?.speed_bps).toBe(1_000_000_000);
+    expect(row?.history).toBe(1);
+
+    const viewRow = out.query<{ device_b_id: number | null; device_b_name: string | null }, [number]>(
+      "SELECT device_b_id, device_b_name FROM v_topology WHERE id = ?",
+    ).get(linkId);
+    expect(viewRow?.device_b_id).toBe(b);
+    expect(viewRow?.device_b_name).toBe("b");
     out.close();
   });
 });

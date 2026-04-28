@@ -67,7 +67,7 @@ function encodeDeviceFragment(): Uint8Array {
     ...u32(3),
     ...u16(0x1f57), 0x10, 0x88, ...u16(0),
     ...u16(TAG.DEVICE_SERVICES), 0x10, 0x88, ...u16(0),
-    ...u16(TAG.DEVICE_IFACE_LIST), 0x10, 0xa0, ...u16(0),
+    ...u16(TAG.DEVICE_DNS_NAMES), 0x10, 0xa0, ...u16(0),
   ]);
 }
 
@@ -99,7 +99,7 @@ describe("DudeDB", () => {
     });
   });
 
-  test("uses the device name as address for DNS-mode devices", () => {
+  test("uses the device name as address for RouterOS-style DNS-mode devices", () => {
     withTempDb((dbPath, sqlite) => {
       sqlite.prepare("INSERT INTO objs (id, obj) VALUES (?, ?)").run(12, encodeDevice({ id: 12, name: "gw.example.com", address: "gw.example.com" }));
 

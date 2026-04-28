@@ -42,9 +42,8 @@ Every normalized DB carries two metadata tables:
 | `_meta` key       | Value                                         |
 | ----------------- | --------------------------------------------- |
 | `source_path`     | Absolute path of the input file               |
-| `source_sha1`     | SHA-1 of the input bytes (when available)     |
 | `generated_at`    | ISO-8601 UTC timestamp of the export          |
-| `generator`       | `donny@<version>`                             |
+| `generator`       | `@tikoci/donny normalize`                     |
 | `schema_version`  | Integer; bumped when the schema breaks        |
 
 `_table_counts(table_name, row_count)` mirrors what `result.tables` returns
@@ -56,43 +55,43 @@ from the API.
 
 | Table                          | Source tag range / origin               | Notes |
 | ------------------------------ | --------------------------------------- | ----- |
-| `device_types`                 | `0x0FA0–0x0FFF` (`RANGE.device_types`)  | `parent_type_id` may reference another type; built-in types flagged |
+| `device_types`                 | `0x2710–0x271F`                         | `parent_type_id` may reference another type; built-in types flagged |
 | `device_type_default_probes`   | continuation of device-type blob         | Junction: which probe templates a device type ships with |
-| `probe_templates`              | `0x2710–0x277F`                          | `kind` is the Dude probe family; `port` may be NULL for ICMP |
-| `link_types`                   | `0x4E20–0x4E89`                          | `speed_bps` from RouterOS link metadata |
-| `snmp_profiles`                | `0x36B0–0x36CF`                          | Community/auth fields not currently extracted |
-| `notifications`                | `0x33F0–0x340F`                          | Email/syslog action targets |
-| `data_sources`                 | `0x4650–0x466F`                          | Custom SNMP OIDs surfaced as user-defined data sources |
-| `tools`                        | `0x4A38–0x4A57`                          | User-defined CLI tools |
-| `file_assets`                  | `0x57E4–0x5807`                          | Metadata only — image bytes are not copied |
+| `probe_templates`              | `0x36B0–0x36D1`                          | `kind` is the Dude probe family; `port` may be NULL for ICMP |
+| `link_types`                   | `0x59D8–0x59DB`                          | `speed_bps` from RouterOS link metadata |
+| `snmp_profiles`                | `0x3C68–0x3C72`                          | Community/auth fields not currently extracted |
+| `notifications`                | `0x3E80–0x3E9B`                          | Email/syslog action targets |
+| `data_sources`                 | `0xCB20–0xCB2F`                          | Dude Function/custom expression objects; table name kept for compatibility with earlier donny snapshots |
+| `tools`                        | `0x7530–0x7533`                          | User-defined CLI tools |
+| `file_assets`                  | `0x697A`                                 | Metadata only — image bytes are not copied |
 
 ### Devices and probing
 
 | Table                | Source tag range  | Notes |
 | -------------------- | ----------------- | ----- |
-| `devices`            | `0x1F40–0x1FA3`   | `dns_mode=1` when address is a DNS name (no IPv4 in record); `device_type_id` references `device_types(id)` — devices with the 0xFFFFFFFF "no type" sentinel are stored as NULL |
+| `devices`            | `0x1F40–0x1FA3`   | `dns_mode=1` when address is a DNS name (no IPv4 in record); RouterOS-created DNS devices store the hostname in `NAME` and an empty `Device_DnsNames` string array; `device_type_id` references `device_types(id)` — devices with the 0xFFFFFFFF "no type" sentinel are stored as NULL |
 | `device_macs`        | continuation      | Junction: a device may have multiple MACs (RouterOS-discovered) |
-| `services`           | `0x2EE0–0x2EFF`   | `unit` defaults to `'s'` (seconds, latency); `enabled=0` for disabled services |
-| `probe_configs`      | `0x29F8–0x2A6F`   | The actual "device X uses probe Y reporting service Z" rows |
+| `services`           | `0xBF68–0xBF71`   | Dude DataSource/time-series anchor objects; `unit` defaults to `'s'` (seconds, latency); `enabled=0` for disabled anchors |
+| `probe_configs`      | `0x2EE0–0x2EF4`   | Dude Service objects: the actual "device X uses probe Y reporting service Z" rows |
 
 ### Topology and maps
 
 | Table             | Source tag range | Notes |
 | ----------------- | ---------------- | ----- |
-| `maps`            | `0x4E90–0x4EAF`  | Canvases (the Dude calls them "Network Maps") |
+| `maps`            | `0x61A8–0x61FA`  | Canvases (the Dude calls them "Network Maps") |
 | `map_elements`    | `0x5DC0–0x5DDF`  | Element placements; only ~1/3 are device nodes — labels/images/sublink endpoints share the table |
-| `topology_links`  | `0x55F0–0x560F`  | Edges between elements; B-side often references a `map_elements.id` rather than a device id directly (see `v_topology`) |
+| `topology_links`  | `0x55F0–0x55F9`  | Edges between map elements; includes `map_id`, `link_type_id`, master interface, speed/history, and optional Tx/Rx data source ids. B-side normally references a `map_elements.id` (see `v_topology`) |
 
 ### Logical groupings
 
 | Table                   | Source tag range  | Notes |
 | ----------------------- | ----------------- | ----- |
-| `networks`              | `0x4170–0x418F`   | Named subnets / address-spaces |
+| `networks`              | `0x2AF8–0x2AFA`   | Named subnets / address-spaces |
 | `network_subnets`       | continuation      | Junction: `(network_id, cidr)` |
-| `device_groups`         | `0x4400–0x441F`   | Static device groups |
+| `device_groups`         | `0x2328–0x2337`   | Static device groups |
 | `device_group_members`  | continuation      | Junction: `(group_id, device_id)` |
-| `syslog_rules`          | `0x4658–0x4677`   | Rule pattern + action + optional notification |
-| `discover_jobs`         | `0x4FA8–0x4FC7`   | Auto-discovery jobs |
+| `syslog_rules`          | `0x1770–0x1779`   | Rule pattern + action + optional notification |
+| `discover_jobs`         | `0x6590–0x65AD`   | Auto-discovery jobs |
 | `discover_job_probes`   | continuation      | Junction: probe templates a job tries |
 
 ### Time-series
@@ -115,6 +114,14 @@ CREATE TABLE chart_<resolution> (
   PRIMARY KEY (service_id, timestamp)
 );
 ```
+
+### Naming note: Dude object names vs donny table names
+
+The Dude internally calls `0x2EE0–0x2EF4` objects **Service** and
+`0xBF68–0xBF71` objects **DataSource**. donny keeps the older, user-facing
+names `probe_configs` for the per-device service assignment and `services`
+for the time-series/data-source anchor because those names are easier to use
+in SQL queries and match the public `DudeDB.services()` API.
 
 ## Views
 
@@ -244,7 +251,7 @@ ORDER BY o.time DESC;
   the `info`/`history` panel buffers) is intentionally not normalized.
 - **SNMP credentials and notification action templates** are summarized
   (name, version, port, type) — secrets are not exported.
-- **Schema version is `1`.** Future breaking changes will bump it; check
+- **Schema version is `2`.** Future breaking changes will bump it; check
   `_meta.schema_version` when consuming the export programmatically.
 
 ## Round-trip / Restoring a `dude.db` (editable)
@@ -291,11 +298,11 @@ The Dude — the new objects are there.
 
 | Modeled table     | Encoder              | Round-trip class         |
 | ----------------- | -------------------- | ------------------------ |
-| `devices`         | `encodeDevice`       | minimal — name, address, dns_mode, device_type_id |
-| `services`        | `encodeService`      | minimal — name, type, parent_id, probe_id |
-| `probe_configs`   | `encodeProbeConfig`  | minimal — name, type, agent_id |
+| `devices`         | `encodeDevice`       | minimal — IPv4 devices preserve name/address separately; DNS-mode devices follow RouterOS CLI shape and use the address as `NAME` |
+| `services`        | `encodeService`      | minimal — name, unit |
+| `probe_configs`   | `encodeProbeConfig`  | minimal — device_id, service_id, probe_type_id |
 | `map_elements`    | `encodeMapNode`      | minimal — map_id, device_id, x, y |
-| `topology_links`  | `encodeTopologyLink` | minimal — device_a_id, device_b_id, mastering_id |
+| `topology_links`  | `encodeTopologyLink` | minimal — map_id, device_a_id, map_element_b_id, link_type_id, master_interface, speed/history, tx/rx data source ids |
 
 "Minimal" means: re-encoding a previously-clean row that you marked `_dirty=1`
 will preserve only the columns the encoder reads. Fields not in the

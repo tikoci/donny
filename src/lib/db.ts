@@ -17,6 +17,7 @@ import {
   getBool,
   getField,
   getStr,
+  getStringArray,
   getU32,
   getU32Array,
   getU64,
@@ -82,7 +83,7 @@ function isDeviceObject(rowId: number, msg: NonNullable<ReturnType<typeof decode
   if (getU32(msg, TAG.SELF_ID) !== rowId) return false;
 
   return getField(msg, TAG.DEVICE_IP) !== undefined
-    || getField(msg, TAG.DEVICE_DNS_MODE) !== undefined
+    || getField(msg, TAG.DEVICE_LOOKUP) !== undefined
     || getField(msg, TAG.NAME) !== undefined;
 }
 
@@ -134,7 +135,8 @@ export class DudeDB {
       const tempDir = mkdtempSync(join(tmpdir(), "donny-"));
       const tempPath = join(tempDir, "dude.db");
       writeFileSync(tempPath, sqliteBytes);
-      const db = readonly ? new Database(tempPath, { readonly: true }) : new Database(tempPath);
+      const db = new Database(tempPath);
+      if (readonly) db.exec("PRAGMA query_only = ON");
       return new DudeDB(db, readonly, tempDir);
     }
 
@@ -211,7 +213,7 @@ export class DudeDB {
         if (s) { address = s; break; }
       }
       const name = getStr(msg, TAG.NAME) ?? "";
-      if (!address) address = name; // DNS-mode: name is the FQDN
+      if (!address) address = getStringArray(msg, TAG.DEVICE_DNS_NAMES)?.[0] ?? name;
 
       const macField = msg.fields.find((f) => f.tag === TAG.DEVICE_MAC && f.val.k === "bytes");
       const macs = macField?.val.k === "bytes" ? parseMacData(macField.val.v) : [];

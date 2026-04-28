@@ -3,10 +3,11 @@
  * relational SQLite database with foreign keys, junction tables, indexes,
  * and convenience views.
  *
- * The output is **derived data**: a snapshot of the source intended for
- * SQL consumption (DBeaver, DuckDB, Grafana, sqlite3 CLI, pandas, etc.).
- * It is not round-trippable into a live Dude server — for writes, use
- * `DudeDB` directly.
+ * The output is **derived data**: a relational snapshot of the source intended
+ * for SQL consumption (DBeaver, DuckDB, Grafana, sqlite3 CLI, pandas, etc.).
+ * It can be turned back into a working `dude.db` via `denormalize()`, but that
+ * reverse path is currently encoder-first with raw fallback rather than a
+ * complete logical model for every Nova object type.
  *
  * Layering note: this module lives in `src/lib/` and stays free of
  * terminal I/O. The CLI wraps `normalizeToFile()`.
@@ -19,8 +20,8 @@ import {
   getBool,
   getStr,
   getU32,
+  getU64,
   hasTagInRange,
-  ipv4FromU32,
   RANGE,
   TAG,
 } from "./nova.ts";
@@ -77,7 +78,7 @@ CREATE TABLE _table_counts (
 -- this only for object types whose encoders aren't implemented yet, AND for
 -- modeled rows that haven't been edited (_dirty=0) so unmodeled fields are
 -- preserved verbatim. As more encoders are added, reliance on this table
--- shrinks. See \`encoder_coverage\` in _meta for current gap report.
+-- shrinks.
 CREATE TABLE _raw_objs (
   id  INTEGER PRIMARY KEY,
   obj BLOB NOT NULL
@@ -194,11 +195,17 @@ CREATE INDEX idx_map_elements_device ON map_elements(device_id);
 
 CREATE TABLE topology_links (
   id              INTEGER PRIMARY KEY,
+  map_id          INTEGER REFERENCES maps(id),
   device_a_id     INTEGER REFERENCES devices(id),
   device_b_id     INTEGER REFERENCES devices(id),
   map_element_b_id INTEGER REFERENCES map_elements(id),
-  probe_type_id   INTEGER REFERENCES probe_templates(id),
-  notification_id INTEGER REFERENCES notifications(id),
+  link_type_id    INTEGER REFERENCES link_types(id),
+  mastering_type  INTEGER,
+  master_interface INTEGER,
+  speed_bps       INTEGER NOT NULL DEFAULT 0,
+  history         INTEGER NOT NULL DEFAULT 0,
+  tx_data_source_id INTEGER,
+  rx_data_source_id INTEGER,
   _dirty          INTEGER NOT NULL DEFAULT 0
 );
 
@@ -347,18 +354,24 @@ CREATE VIEW v_outages_full AS
 CREATE VIEW v_topology AS
   SELECT
     tl.id,
+    tl.map_id, m.name AS map_name,
     tl.device_a_id, da.name AS device_a_name,
     -- Side B may be a direct device or a map element pointing at one.
     COALESCE(tl.device_b_id, me.device_id) AS device_b_id,
     COALESCE(db.name, dbe.name) AS device_b_name,
-    pt.name AS probe_type, n.name AS notification
+    tl.link_type_id, lt.name AS link_type,
+    tl.master_interface,
+    tl.speed_bps,
+    tl.history,
+    tl.tx_data_source_id,
+    tl.rx_data_source_id
   FROM topology_links tl
+  LEFT JOIN maps            m   ON m.id   = tl.map_id
   LEFT JOIN devices         da  ON da.id  = tl.device_a_id
   LEFT JOIN devices         db  ON db.id  = tl.device_b_id
   LEFT JOIN map_elements    me  ON me.id  = tl.map_element_b_id
   LEFT JOIN devices         dbe ON dbe.id = me.device_id
-  LEFT JOIN probe_templates pt  ON pt.id  = tl.probe_type_id
-  LEFT JOIN notifications   n   ON n.id   = tl.notification_id;
+  LEFT JOIN link_types      lt  ON lt.id  = tl.link_type_id;
 `;
 
 // ---------------------------------------------------------------------------
@@ -495,13 +508,25 @@ export function normalize(
     const insAsset  = dst.prepare("INSERT INTO file_assets (id, name, parent_id) VALUES (?, ?, ?)");
     const insMap    = dst.prepare("INSERT INTO maps (id, name) VALUES (?, ?)");
     const insMapEl  = dst.prepare("INSERT INTO map_elements (id, map_id, device_id, x, y) VALUES (?, ?, ?, ?, ?)");
-    const insLink   = dst.prepare("INSERT INTO topology_links (id, device_a_id, device_b_id, map_element_b_id, probe_type_id, notification_id) VALUES (?, ?, ?, ?, ?, ?)");
+    const insLink   = dst.prepare("INSERT INTO topology_links (id, map_id, device_a_id, device_b_id, map_element_b_id, link_type_id, mastering_type, master_interface, speed_bps, history, tx_data_source_id, rx_data_source_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
     let nSnmp = 0, nNotif = 0, nTools = 0, nDS = 0, nAssets = 0, nMaps = 0, nMapEls = 0, nLinks = 0;
     // Deferred map element + topology rows so target FKs (devices, maps, probe_templates, notifications)
     // can be checked after everything is in place.
     const pendingMapEls: Array<[number, number | null, number | null, number | null, number | null]> = [];
-    const pendingLinks:  Array<[number, number | null, number | null, number | null]> = [];
+    const pendingLinks:  Array<[
+      number,
+      number | null,
+      number | null,
+      number | null,
+      number | null,
+      number | null,
+      number | null,
+      number | bigint | null,
+      number,
+      number | null,
+      number | null,
+    ]> = [];
 
     for (const { id, msg } of src.rawObjects()) {
       // Skip everything already imported via accessor methods.
@@ -555,15 +580,21 @@ export function normalize(
         continue;
       }
       if (hasTagInRange(msg, RANGE.LINK_LO, RANGE.LINK_HI)) {
-        // 0x55F5 may be a direct device_b_id OR a map_element id (per DESIGN.md).
-        // We store it in map_element_b_id and let the view resolve it.
+        // 0x55F5 is Link_NetMapElementID. Some old fixtures used it as a
+        // direct device id; keep that compatibility when no map_element exists.
         pendingLinks.push([
           id,
           nullIfSentinel(getU32(msg, TAG.LINK_DEVICE_A)),
-          nullIfSentinel(getU32(msg, TAG.LINK_DEVICE_B)), // map element or device id
-          nullIfSentinel(getU32(msg, TAG.LINK_TYPE)),
+          nullIfSentinel(getU32(msg, TAG.LINK_MAP_ELEMENT_ID)),
+          nullIfSentinel(getU32(msg, TAG.LINK_MAP_ID)),
+          nullIfSentinel(getU32(msg, TAG.LINK_TYPE_ID)),
+          getU32(msg, TAG.LINK_MASTERING_TYPE) ?? null,
+          nullIfSentinel(getU32(msg, TAG.LINK_MASTER_INTERFACE)),
+          getU64(msg, TAG.LINK_SPEED) ?? 0n,
+          getBool(msg, TAG.LINK_HISTORY) ? 1 : 0,
+          nullIfSentinel(getU32(msg, TAG.LINK_TX_DATA_SOURCE_ID)),
+          nullIfSentinel(getU32(msg, TAG.LINK_RX_DATA_SOURCE_ID)),
         ]);
-        continue;
       }
     }
     counts.snmp_profiles = nSnmp;
@@ -628,10 +659,9 @@ export function normalize(
     const knownDeviceIds  = new Set(dst.query<{ id: number }, []>("SELECT id FROM devices").all().map((r) => r.id));
     const knownServiceIds = new Set(dst.query<{ id: number }, []>("SELECT id FROM services").all().map((r) => r.id));
     const knownProbeIds   = new Set(dst.query<{ id: number }, []>("SELECT id FROM probe_templates").all().map((r) => r.id));
-    let nProbeCfgs = 0, nSkippedProbes = 0;
+    let nProbeCfgs = 0;
     for (const p of src.probeConfigs()) {
       if (!knownDeviceIds.has(p.deviceId) || !knownServiceIds.has(p.serviceId) || !knownProbeIds.has(p.probeTypeId)) {
-        nSkippedProbes++;
         continue;
       }
       insProbeCfg.run(p.id, p.deviceId, p.serviceId, p.probeTypeId, p.enabled ? 1 : 0, p.createdAt ?? null);
@@ -707,17 +737,38 @@ export function normalize(
 
     let nValidLinks = 0;
     const knownMapElIds = new Set(dst.query<{ id: number }, []>("SELECT id FROM map_elements").all().map((r) => r.id));
-    for (const [lid, a, bRaw, ptype] of pendingLinks) {
+    const knownLinkTypeIds = new Set(dst.query<{ id: number }, []>("SELECT id FROM link_types").all().map((r) => r.id));
+    for (const [
+      lid,
+      a,
+      bRaw,
+      mapId,
+      linkTypeId,
+      masteringType,
+      masterInterface,
+      speedBps,
+      history,
+      txDataSourceId,
+      rxDataSourceId,
+    ] of pendingLinks) {
       const safeA = a !== null && knownDeviceIds.has(a) ? a : null;
-      // bRaw may be a device id OR a map_element id. Try device first, then map_element.
+      // bRaw is normally a map_element id. Accept direct device ids for older
+      // synthetic fixtures and partial databases.
       let safeDevB: number | null = null;
       let safeMapElB: number | null = null;
       if (bRaw !== null) {
-        if (knownDeviceIds.has(bRaw)) safeDevB = bRaw;
-        else if (knownMapElIds.has(bRaw)) safeMapElB = bRaw;
+        if (knownMapElIds.has(bRaw)) safeMapElB = bRaw;
+        else if (knownDeviceIds.has(bRaw)) safeDevB = bRaw;
       }
-      const safePt = ptype !== null && knownProbeIds.has(ptype) ? ptype : null;
-      insLink.run(lid, safeA, safeDevB, safeMapElB, safePt, null);
+      const safeMap = mapId !== null && knownMapIds.has(mapId) ? mapId : null;
+      const safeLinkType = linkTypeId !== null && knownLinkTypeIds.has(linkTypeId) ? linkTypeId : null;
+      const safeTxDataSource = txDataSourceId !== null && knownServiceIds.has(txDataSourceId) ? txDataSourceId : null;
+      const safeRxDataSource = rxDataSourceId !== null && knownServiceIds.has(rxDataSourceId) ? rxDataSourceId : null;
+      insLink.run(
+        lid, safeMap, safeA, safeDevB, safeMapElB, safeLinkType,
+        masteringType, masterInterface, speedBps, history,
+        safeTxDataSource, safeRxDataSource,
+      );
       nValidLinks++;
     }
     counts.topology_links = nValidLinks;
@@ -740,7 +791,7 @@ export function normalize(
     const insCount = dst.prepare("INSERT INTO _table_counts (table_name, row_count) VALUES (?, ?)");
     insMeta.run("source_path", options.sourcePath ?? "");
     insMeta.run("generated_at", new Date().toISOString());
-    insMeta.run("schema_version", "1");
+    insMeta.run("schema_version", "2");
     insMeta.run("generator", "@tikoci/donny normalize");
     for (const [tbl, n] of Object.entries(counts)) insCount.run(tbl, n);
   })();
@@ -789,8 +840,6 @@ export function normalizeToFile(
 // ---------------------------------------------------------------------------
 
 interface OutageRow { serviceID: number; deviceID: number; mapID: number; time: number; status: number; duration: number; }
-interface ChartRow  { sourceIDandTime: string | bigint | number; value: number; }
-
 function copyOutages(src: DudeDB, dst: Database): number {
   // DudeDB.outages() returns rows with the raw SQLite column names
   // (serviceID/deviceID/mapID — camelCase D), not the camelCase fields the

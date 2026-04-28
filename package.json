@@ -26,6 +26,7 @@
     "lint:markdown": "bunx markdownlint-cli2 '**/*.md'",
     "test": "bun test test/unit/",
     "test:all": "bun test test/unit/",
+    "test:integration:quickchr": "DONNY_QUICKCHR=1 bun test test/integration/quickchr-dude-dns.test.ts",
     "dev": "bun run src/cli/index.ts"
   },
   "devDependencies": {

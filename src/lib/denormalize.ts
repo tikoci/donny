@@ -146,9 +146,17 @@ interface MapElementRow {
 }
 interface TopologyLinkRow {
   id: number;
+  map_id: number | null;
   device_a_id: number | null;
   device_b_id: number | null;
   map_element_b_id: number | null;
+  link_type_id: number | null;
+  mastering_type: number | null;
+  master_interface: number | null;
+  speed_bps: number | bigint | string | null;
+  history: number | null;
+  tx_data_source_id: number | null;
+  rx_data_source_id: number | null;
   _dirty: number;
 }
 
@@ -207,14 +215,22 @@ const ENCODER_TABLES: EncoderTable<unknown>[] = [
   },
   {
     table: "topology_links",
-    select: "SELECT id, device_a_id, device_b_id, map_element_b_id, _dirty FROM topology_links",
+    select: "SELECT id, map_id, device_a_id, device_b_id, map_element_b_id, link_type_id, mastering_type, master_interface, speed_bps, history, tx_data_source_id, rx_data_source_id, _dirty FROM topology_links",
     encode: (row) => {
       const r = row as TopologyLinkRow;
       return encodeTopologyLink({
         id: r.id,
+        mapId: r.map_id ?? 0xffffffff,
         deviceAId: r.device_a_id ?? 0xffffffff,
         deviceBId: r.device_b_id ?? 0xffffffff,
         mapElementBId: r.map_element_b_id ?? 0xffffffff,
+        linkTypeId: r.link_type_id ?? 0xffffffff,
+        masteringType: r.mastering_type ?? 0,
+        masterInterface: r.master_interface ?? 0xffffffff,
+        speedBps: typeof r.speed_bps === "string" ? BigInt(r.speed_bps) : (r.speed_bps ?? 0),
+        history: !!r.history,
+        txDataSourceId: r.tx_data_source_id ?? 0xffffffff,
+        rxDataSourceId: r.rx_data_source_id ?? 0xffffffff,
       });
     },
   },
@@ -256,9 +272,12 @@ function detectRange(buf: Uint8Array): string {
 // gap report.
 function rawHasTagInRange(buf: Uint8Array, lo: number, hi: number): boolean {
   if (buf.length < 14) return false;
-  for (let i = 12; i < buf.length - 3; i++) {
-    const tag = buf[i]! | (buf[i + 1]! << 8);
-    const marker = buf[i + 2]!;
+  for (let i = 12; i + 2 < buf.length; i++) {
+    const loByte = buf[i];
+    const hiByte = buf[i + 1];
+    const marker = buf[i + 2];
+    if (loByte === undefined || hiByte === undefined || marker === undefined) break;
+    const tag = loByte | (hiByte << 8);
     if (tag >= lo && tag <= hi && (marker === 0x01 || marker === 0x11 || marker === 0xfe)) {
       return true;
     }
