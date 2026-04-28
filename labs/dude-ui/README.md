@@ -103,6 +103,38 @@ bun run labs/dude-ui/first-mapping.ts assert \
 
 The assertion checks both the raw Nova diff and `DudeDB.devices()` decode, so a passing replay means the `routerOS` domain field is grounded by a real client-written export.
 
+## Probe target: client adds a device with a probe
+
+This grounds donny's probe-config decoding by letting the real `dude.exe` perform the **Add Device** flow (which under the hood writes one device, one service, and one probe-config object) and then asserting donny decodes the new triple correctly:
+
+- Range: `RANGE.PROBE_CONFIG_LO..HI` = `0x2ee0..0x2ef4`
+- Key tags: `TAG.PROBE_DEVICE_ID` (`0x2ee1`), `TAG.PROBE_TYPE_ID` (`0x2ee3`), `TAG.PROBE_SERVICE_ID` (`0x2eec`)
+- Default probe template: `PROBE_ID_PING` = `10160`
+- Default target device name: `donny-ui-probe-target-<pid>`
+
+Run a guided session that exports `before-add-probe.export`, asks you to add a new device + probe in the Dude client, exports `after-add-probe.export`, and asserts donny resolves the device, service, and probe-config the client just wrote:
+
+```sh
+bun run lab:dude-ui:add-probe
+# equivalent to:
+bun run labs/dude-ui/session.ts --add-device-with-probe --keep
+```
+
+If a human or external driver already produced `after-add-probe.export`, replay the assertion without launching a GUI:
+
+```sh
+bun run lab:dude-ui:assert-probe
+# equivalent to:
+bun run labs/dude-ui/first-mapping.ts assert-probe \
+  --before labs/dude-ui/artifacts/before-add-probe.export \
+  --after  labs/dude-ui/artifacts/after-add-probe.export \
+  --expected-probe-type 10160
+```
+
+Pass `--name <device-name>` to scope to one specific device when the export contains other concurrent writes. Pass `--expected-probe-type <id>` to require a specific probe template (omit for any). The assertion fails loudly if the new device, the new probe-config, or the linked service is missing from `DudeDB.devices()` / `probeConfigs()` / `services()`.
+
+A synthetic version of this assertion runs in `test/unit/diff.test.ts` using `DudeDB.inMemory().addDevice(...)` so the assertion logic itself is regression-tested even before live evidence exists.
+
 Manual equivalent:
 
 1. Export a baseline DB from RouterOS:

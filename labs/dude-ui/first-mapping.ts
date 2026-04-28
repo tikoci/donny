@@ -5,10 +5,11 @@
  * helper makes the evidence check deterministic once `after.export` exists.
  */
 
-import { diffDudeDbFiles, DudeDB, TAG } from "../../src/index.ts";
-import type { ChangedObject, ComparableNovaField, ComparableNovaValue, DudeDbDiff } from "../../src/index.ts";
+import { diffDudeDbFiles, DudeDB, RANGE, TAG } from "../../src/index.ts";
+import type { AddedOrRemovedObject, ChangedObject, ComparableNovaField, ComparableNovaValue, DudeDbDiff, ProbeConfig, Service } from "../../src/index.ts";
 
 export const FIRST_ROUTEROS_FLAG_DEVICE_PREFIX = "donny-ui-routeros-flag";
+export const PROBE_TARGET_DEVICE_PREFIX = "donny-ui-probe-target";
 
 export interface RouterOsFlagMappingAssertion {
   beforePath: string;
@@ -36,6 +37,26 @@ export interface ClientConnectMappingResult {
   beforeValue: number | undefined;
   afterValue: number;
   fieldKey: string;
+  diff: DudeDbDiff;
+}
+
+export interface ProbeAddedMappingAssertion {
+  beforePath: string;
+  afterPath: string;
+  /** Optional: scope assertion to a device with this exact NAME. */
+  deviceName?: string;
+  /** Optional: require the new probe to reference this probe template id (e.g. PROBE_ID_PING = 10160). */
+  expectedProbeTypeId?: number;
+}
+
+export interface ProbeAddedMappingResult {
+  deviceId: number;
+  deviceName: string;
+  probeId: number;
+  serviceId: number;
+  probeTypeId: number;
+  probeConfig: ProbeConfig;
+  service: Service | undefined;
   diff: DudeDbDiff;
 }
 
@@ -181,11 +202,113 @@ export function assertClientConnectMapping(options: ClientConnectMappingAssertio
   );
 }
 
+function objectHasTagInRange(object: AddedOrRemovedObject, lo: number, hi: number): boolean {
+  return object.fields.some((field) => field.tag >= lo && field.tag <= hi);
+}
+
+function fieldNumberFromAdded(object: AddedOrRemovedObject, tag: number): number | undefined {
+  const field = object.fields.find((f) => f.tag === tag);
+  if (!field) return undefined;
+  if (field.value.kind !== "u8" && field.value.kind !== "u32") return undefined;
+  return field.value.value;
+}
+
+function objectName(object: AddedOrRemovedObject): string {
+  return object.name ?? "";
+}
+
+export function assertProbeAddedMapping(options: ProbeAddedMappingAssertion): ProbeAddedMappingResult {
+  const diff = diffDudeDbFiles(options.beforePath, options.afterPath, {
+    objectName: options.deviceName,
+  });
+
+  // When deviceName is set we restrict the diff via objectName above. For the
+  // probe and service objects (no NAME == deviceName) we re-run an unfiltered
+  // diff to find them; an unfiltered second pass is cheap relative to the
+  // overall manual workflow.
+  const fullDiff = options.deviceName
+    ? diffDudeDbFiles(options.beforePath, options.afterPath)
+    : diff;
+
+  // Find the added device. If deviceName is provided, restrict to that.
+  const candidateDevices = diff.addedObjects.filter((object) => {
+    if (!objectHasTagInRange(object, RANGE.DEVICE_LO, RANGE.DEVICE_HI)) return false;
+    if (options.deviceName && objectName(object) !== options.deviceName) return false;
+    return true;
+  });
+
+  if (candidateDevices.length === 0) {
+    const summary = diff.addedObjects.map((object) => `${object.id}:${objectName(object)}`).join(", ") || "<none>";
+    throw new Error(`no added device${options.deviceName ? ` named ${JSON.stringify(options.deviceName)}` : ""} found in diff. added objects: ${summary}`);
+  }
+
+  // Pick the candidate device that has at least one matching new probe-config.
+  for (const deviceObj of candidateDevices) {
+    const deviceId = deviceObj.id;
+    const probeObj = fullDiff.addedObjects.find((object) => {
+      if (!objectHasTagInRange(object, RANGE.PROBE_CONFIG_LO, RANGE.PROBE_CONFIG_HI)) return false;
+      if (fieldNumberFromAdded(object, TAG.PROBE_DEVICE_ID) !== deviceId) return false;
+      if (options.expectedProbeTypeId !== undefined
+        && fieldNumberFromAdded(object, TAG.PROBE_TYPE_ID) !== options.expectedProbeTypeId) return false;
+      return true;
+    });
+
+    if (!probeObj) continue;
+
+    const serviceId = fieldNumberFromAdded(probeObj, TAG.PROBE_SERVICE_ID);
+    const probeTypeId = fieldNumberFromAdded(probeObj, TAG.PROBE_TYPE_ID);
+    if (serviceId === undefined || probeTypeId === undefined) {
+      throw new Error(`new probe-config object ${probeObj.id} for device ${deviceId} is missing PROBE_SERVICE_ID or PROBE_TYPE_ID`);
+    }
+
+    // Confirm donny's domain decode agrees with the diff.
+    const after = DudeDB.openAuto(options.afterPath, { readonly: true });
+    try {
+      const decodedDevice = after.devices().find((device) => device.id === deviceId);
+      if (!decodedDevice) {
+        throw new Error(`device ${deviceId} not decodable via DudeDB.devices() in after export`);
+      }
+      const probeConfig = after.probeConfigs().find((p) => p.id === probeObj.id);
+      if (!probeConfig) {
+        throw new Error(`probe-config ${probeObj.id} not decodable via DudeDB.probeConfigs() in after export`);
+      }
+      if (probeConfig.deviceId !== deviceId) {
+        throw new Error(`probe-config ${probeObj.id} decoded deviceId=${probeConfig.deviceId}, expected ${deviceId}`);
+      }
+      if (probeConfig.probeTypeId !== probeTypeId) {
+        throw new Error(`probe-config ${probeObj.id} decoded probeTypeId=${probeConfig.probeTypeId}, expected ${probeTypeId}`);
+      }
+      const service = after.services().find((s) => s.id === serviceId);
+
+      return {
+        deviceId,
+        deviceName: decodedDevice.name,
+        probeId: probeObj.id,
+        serviceId,
+        probeTypeId,
+        probeConfig,
+        service,
+        diff: fullDiff,
+      };
+    } finally {
+      after.close();
+    }
+  }
+
+  const probeSummaries = fullDiff.addedObjects
+    .filter((object) => objectHasTagInRange(object, RANGE.PROBE_CONFIG_LO, RANGE.PROBE_CONFIG_HI))
+    .map((object) => `probe ${object.id} -> device ${fieldNumberFromAdded(object, TAG.PROBE_DEVICE_ID)} type ${fieldNumberFromAdded(object, TAG.PROBE_TYPE_ID)}`);
+  throw new Error(
+    `added device(s) [${candidateDevices.map((object) => `${object.id}:${objectName(object)}`).join(", ")}] but no matching new probe-config object${options.expectedProbeTypeId !== undefined ? ` for probeTypeId=${options.expectedProbeTypeId}` : ""}.\nadded probes: ${probeSummaries.join("; ") || "<none>"}`,
+  );
+}
+
 function helpText(): string {
   return `
 Usage:
   bun run labs/dude-ui/first-mapping.ts assert --before before.export --after after.export --name <device-name> [--expected-routeros true|false] [--json]
   bun run labs/dude-ui/first-mapping.ts assert-connect --before before.export --after after.export [--json]
+  bun run labs/dude-ui/first-mapping.ts assert-probe --before before.export --after after.export [--name <device-name>] [--expected-probe-type <id>] [--json]
 `;
 }
 
@@ -206,12 +329,13 @@ if (import.meta.main) {
     console.log(helpText());
     process.exit(0);
   }
-  if (args[0] !== "assert" && args[0] !== "assert-connect") usage();
+  if (args[0] !== "assert" && args[0] !== "assert-connect" && args[0] !== "assert-probe") usage();
 
   let beforePath = "";
   let afterPath = "";
   let deviceName = "";
   let expectedAfter = true;
+  let expectedProbeTypeId: number | undefined;
   let json = false;
 
   for (let i = 1; i < args.length; i++) {
@@ -229,6 +353,13 @@ if (import.meta.main) {
       case "--expected-routeros":
         expectedAfter = parseBool(args[++i]);
         break;
+      case "--expected-probe-type": {
+        const value = args[++i];
+        const id = Number.parseInt(value ?? "", 10);
+        if (!Number.isFinite(id)) usage();
+        expectedProbeTypeId = id;
+        break;
+      }
       case "--json":
         json = true;
         break;
@@ -246,6 +377,23 @@ if (import.meta.main) {
     } else {
       console.log(`ok: ${tagName(TAG.SYS_LAST_CLIENT_CONNECT)} changed on object ${result.objectId}`);
       console.log(`last client connect: ${result.beforeValue} -> ${result.afterValue} via ${result.fieldKey}`);
+    }
+    process.exit(0);
+  }
+
+  if (args[0] === "assert-probe") {
+    const result = assertProbeAddedMapping({
+      beforePath,
+      afterPath,
+      deviceName: deviceName || undefined,
+      expectedProbeTypeId,
+    });
+    if (json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(`ok: client added device ${result.deviceId} (${JSON.stringify(result.deviceName)})`);
+      console.log(`     probe-config ${result.probeId} type=${result.probeTypeId} -> service ${result.serviceId}${result.service ? ` (${JSON.stringify(result.service.name)})` : ""}`);
+      console.log(`     enabled=${result.probeConfig.enabled} createdAt=${result.probeConfig.createdAt}`);
     }
     process.exit(0);
   }

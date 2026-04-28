@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { assertClientConnectMapping, assertRouterOsFlagMapping } from "../../labs/dude-ui/first-mapping.ts";
+import { assertClientConnectMapping, assertProbeAddedMapping, assertRouterOsFlagMapping } from "../../labs/dude-ui/first-mapping.ts";
 import { diffDudeDbs, DudeDB, encodeDevice, TAG } from "../../src/index.ts";
 
 const scratchBefore = join(import.meta.dir, ".first-mapping-before.db");
@@ -155,12 +155,10 @@ describe("Dude DB diff", () => {
   });
 
   test("asserts client-connect mapping when 0x1017 is newly added in after", () => {
-    // Synthetic before has no SYS_LAST_CLIENT_CONNECT field; after introduces one.
     rmSync(scratchBefore, { force: true });
     const beforeDb = new Database(scratchBefore);
     try {
       beforeDb.exec("CREATE TABLE objs (id integer primary key, obj blob)");
-      // Object 10000 with only NAME — no 0x1017 yet.
       const blob = Uint8Array.from([
         0x4d, 0x32, 0x01, 0x00, 0xff, 0x88, 0x01, 0x00,
         0x01, 0x00, 0x00, 0x00,
@@ -182,6 +180,45 @@ describe("Dude DB diff", () => {
       expect(result.fieldKey).toBe("0x1017#0");
       expect(result.beforeValue).toBeUndefined();
       expect(result.afterValue).toBe(1_777_405_999);
+    } finally {
+      rmSync(scratchBefore, { force: true });
+      rmSync(scratchAfter, { force: true });
+    }
+  });
+
+  test("asserts probe-added mapping when client adds a device with a ping probe", () => {
+    rmSync(scratchBefore, { force: true });
+    rmSync(scratchAfter, { force: true });
+
+    const before = DudeDB.inMemory();
+    // @ts-expect-error test fixture access through private db handle
+    (before.db as Database).exec(`VACUUM INTO '${scratchBefore.replace(/'/g, "''")}'`);
+    before.close();
+
+    // addDevice() mints device + service + probeConfig through the same encoders
+    // the real client write path uses; treat it as a synthetic stand-in for the
+    // dude.exe "Add Device" flow.
+    const after = DudeDB.inMemory();
+    const ids = after.addDevice({ name: "ui-probe-target", address: "10.0.0.7" });
+    // @ts-expect-error test fixture access through private db handle
+    (after.db as Database).exec(`VACUUM INTO '${scratchAfter.replace(/'/g, "''")}'`);
+    after.close();
+
+    try {
+      const result = assertProbeAddedMapping({
+        beforePath: scratchBefore,
+        afterPath: scratchAfter,
+        deviceName: "ui-probe-target",
+        expectedProbeTypeId: 10160,
+      });
+
+      expect(result.deviceId).toBe(ids.deviceId);
+      expect(result.deviceName).toBe("ui-probe-target");
+      expect(result.probeId).toBe(ids.probeId);
+      expect(result.serviceId).toBe(ids.serviceId);
+      expect(result.probeTypeId).toBe(10160);
+      expect(result.probeConfig.deviceId).toBe(ids.deviceId);
+      expect(result.service?.id).toBe(ids.serviceId);
     } finally {
       rmSync(scratchBefore, { force: true });
       rmSync(scratchAfter, { force: true });
