@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 
-const KNOWN_COMMANDS = new Set(["setup", "wizard", "info", "list", "export", "add", "--help", "-h", "help"]);
+const KNOWN_COMMANDS = new Set(["setup", "wizard", "info", "list", "export", "add", "normalize", "--help", "-h", "help"]);
 
 /** Parse --flag=value and --flag value pairs. */
 export function parseFlags(argv: string[]): { flags: Record<string, string | boolean>; positional: string[] } {
@@ -204,6 +204,31 @@ export async function runCli(argv: string[], isTTY: boolean): Promise<void> {
       break;
     }
 
+    case "normalize": {
+      const inputPath = positional[0];
+      const outputPath = positional[1];
+      if (!inputPath || !outputPath) {
+        console.error("Error: usage: donny normalize <input.db|export.dude> <output.db> [--overwrite] [--skip-timeseries]");
+        process.exit(1);
+      }
+      const overwrite = bool(flags, "overwrite");
+      const skipTimeseries = bool(flags, "skip-timeseries");
+      const { normalizeToFile } = await import("../lib/normalize.ts");
+      const t0 = Date.now();
+      const result = normalizeToFile(inputPath, outputPath, { overwrite, skipTimeseries });
+      const ms = Date.now() - t0;
+      console.log(`\n  Normalized ${inputPath} → ${outputPath} in ${ms}ms\n`);
+      const rows = Object.entries(result.tables)
+        .filter(([, n]) => n > 0)
+        .sort(([a], [b]) => a.localeCompare(b));
+      const nameW = Math.max(10, ...rows.map(([n]) => n.length));
+      for (const [name, n] of rows) {
+        console.log(`    ${name.padEnd(nameW)}  ${String(n).padStart(8)}`);
+      }
+      console.log(`\n    ${"total".padEnd(nameW)}  ${String(result.totalRows).padStart(8)}\n`);
+      break;
+    }
+
     case "--help":
     case "-h":
     case "help":
@@ -227,6 +252,9 @@ Usage:
   donny export <db> [options]               export devices
     --format csv|json                       output format (default: json)
     --include-credentials                   include username/password in output
+  donny normalize <in> <out.db> [opts]      transform dude.db into a normalized SQLite
+    --overwrite                             replace <out.db> if it exists
+    --skip-timeseries                       skip outages and chart_values_* copy
   donny add device <db> [options]           add a device with ping probe
     --name <name>                           device name (required)
     --address <ip|hostname>                 IP address or FQDN (required)

@@ -7,6 +7,7 @@ src/
   lib/
     nova.ts      — Nova Message TLV codec (encode + decode)
     db.ts        — DudeDB: SQLite access via bun:sqlite
+    normalize.ts — dude.db → relational SQLite transform (schema + writer)
     types.ts     — Domain types shared across lib and cli
   cli/
     index.ts     — Command router (info, list, export, add, wizard)
@@ -19,7 +20,11 @@ src/
 
 `src/cli/` wraps the library. It owns terminal output and exit codes.
 
-`src/index.ts` re-exports the public surface: `DudeDB`, all Nova codec functions and types, and domain types.
+`src/index.ts` re-exports the public surface: `DudeDB`, all Nova codec functions and types, domain types, and the normalize APIs (`normalize`, `normalizeToFile`, `NORMALIZED_SCHEMA_SQL`).
+
+## Normalized SQLite Export
+
+`src/lib/normalize.ts` walks every `DudeDB` accessor plus on-the-fly raw blob scans for object types not yet exposed (snmp_profiles, notifications, tools, data_sources, file_assets, map_elements, topology_links) and writes a fully relational SQLite database with foreign keys, indexes, and convenience views. The DDL lives in a single `NORMALIZED_SCHEMA_SQL` string at the top of `normalize.ts` — when changing it, also update `docs/normalized-schema.md` and bump `_meta.schema_version` if the change is breaking. See `docs/normalized-schema.md` for the user-facing schema reference and sample queries.
 
 ## Storage: dude.db
 

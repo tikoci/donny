@@ -29,6 +29,19 @@
 // Database class
 export { DudeDB } from "./lib/db.ts";
 
+// Normalized SQLite export
+export {
+  normalize,
+  normalizeToFile,
+  NORMALIZED_SCHEMA_SQL,
+} from "./lib/normalize.ts";
+export type {
+  NormalizeStats,
+  NormalizeResult,
+  NormalizeOptions,
+  NormalizeToFileOptions,
+} from "./lib/normalize.ts";
+
 // Nova Message codec (low-level)
 export {
   NOVA_MAGIC,

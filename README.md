@@ -33,7 +33,13 @@ donny add device <db> [options]           add a device with ping probe
   --password <pass>                       RouterOS password
   --routeros                              flag device as RouterOS
   --snmp                                  enable SNMP monitoring
+donny normalize <input> <output.db>       export to relational SQLite
+  --overwrite                             replace existing destination
+  --skip-timeseries                       skip chart_* / outages copy
 ```
+
+See [docs/normalized-schema.md](docs/normalized-schema.md) for the
+normalized schema reference and sample SQL queries.
 
 ## Library
 
