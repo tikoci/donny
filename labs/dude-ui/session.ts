@@ -115,6 +115,10 @@ Probe mode (--add-device-with-probe):
     out.reuse = true;
   }
 
+  if (out.firstRouterOsFlag && out.addDeviceWithProbe) {
+    throw new Error("--first-routeros-flag and --add-device-with-probe are separate evidence runs");
+  }
+
   return out;
 }
 
@@ -153,10 +157,14 @@ try {
   console.log(`Dude server: ${target.host}:${target.port}`);
   console.log(`Credentials: ${target.username} / <empty password>`);
 
-  const probeMode = args.addDeviceWithProbe;
-  const beforePath = join(args.artifactDir, probeMode ? "before-add-probe.export" : "before.export");
-  const afterPath = join(args.artifactDir, probeMode ? "after-add-probe.export" : "after.export");
-  const diffPath = join(args.artifactDir, probeMode ? "add-probe-diff.json" : "diff.json");
+  const modePrefix = args.addDeviceWithProbe
+    ? "add-probe"
+    : args.firstRouterOsFlag
+      ? "routeros-flag"
+      : "";
+  const beforePath = join(args.artifactDir, modePrefix ? `before-${modePrefix}.export` : "before.export");
+  const afterPath = join(args.artifactDir, modePrefix ? `after-${modePrefix}.export` : "after.export");
+  const diffPath = join(args.artifactDir, modePrefix ? `${modePrefix}-diff.json` : "diff.json");
 
   if (args.firstRouterOsFlag) {
     console.log(`Seeding first mapping target device: ${args.deviceName}`);
@@ -165,7 +173,7 @@ try {
     console.log(`Expected ${args.deviceName} ${args.expectedRouterOs ? "RouterOS=checked" : "RouterOS=unchecked"}`);
   }
 
-  if (probeMode) {
+  if (args.addDeviceWithProbe) {
     // No seeding — the client itself must add the device + probe so we can
     // observe the add-device write path end-to-end.
     console.log(`UI target: in dude.exe, add a NEW device named ${JSON.stringify(args.deviceName)}`);
@@ -174,19 +182,19 @@ try {
   }
 
   console.log(`Exporting baseline: ${beforePath}`);
-  writeFileSync(beforePath, await harness.exportDb(probeMode ? "donny-ui-before-add-probe.export" : "donny-ui-before.export"));
+  writeFileSync(beforePath, await harness.exportDb(modePrefix ? `donny-ui-before-${modePrefix}.export` : "donny-ui-before.export"));
 
   if (args.driveLogin) await runDriver(target.port, args.artifactDir);
   else console.log("Launch the client manually with: wine ~/.wine/drive_c/Program\\ Files\\ \\(x86\\)/dude/dude.exe");
 
   const rl = createInterface({ input, output });
-  await rl.question(probeMode
+  await rl.question(args.addDeviceWithProbe
     ? "Add the device + probe in the Dude UI, save, then press Enter to export/diff... "
     : "Make one Dude UI change, save it, then press Enter to export/diff... ");
   rl.close();
 
   console.log(`Exporting after snapshot: ${afterPath}`);
-  writeFileSync(afterPath, await harness.exportDb(probeMode ? "donny-ui-after-add-probe.export" : "donny-ui-after.export"));
+  writeFileSync(afterPath, await harness.exportDb(modePrefix ? `donny-ui-after-${modePrefix}.export` : "donny-ui-after.export"));
 
   const diff = diffDudeDbFiles(beforePath, afterPath);
   writeFileSync(diffPath, `${JSON.stringify(diff, null, 2)}\n`);
@@ -201,7 +209,7 @@ try {
     console.log(`Asserted TAG.DEVICE_ROUTER_OS on object ${result.objectId}: ${result.beforeValue} -> ${result.afterValue}`);
   }
 
-  if (probeMode) {
+  if (args.addDeviceWithProbe) {
     const result = assertProbeAddedMapping({
       beforePath,
       afterPath,

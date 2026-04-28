@@ -4,6 +4,38 @@ Local-only harness for driving the Wine-hosted The Dude Windows client against a
 
 This lab is intentionally not part of CI. Its purpose is to let the real `dude.exe` client write values, then use donny's DB diff tooling to identify the exact Nova fields the client changed.
 
+## Current truth: donny is not complete
+
+Do not treat unit tests or synthetic fixtures as proof that donny's UI mapping is complete. They prove codec behavior and donny's current encoders/decoders; they do **not** prove that our domain names, field names, or value semantics match the real Dude client.
+
+The source of truth for UI mappings is:
+
+1. A real Wine `dude.exe` session connected to QuickCHR.
+2. A known UI change with a known value.
+3. RouterOS `/dude/export-db` before and after that UI change.
+4. A replay assertion that checks the raw Nova diff **and** donny's decoded domain object.
+
+The regular entry point is the evidence report:
+
+```sh
+bun run lab:dude-ui:evidence
+```
+
+It prints every tracked UI mapping target and one of these states:
+
+- `grounded` — live artifacts exist and the replay assertion passed.
+- `missing-artifact` — the target has an assertion, but the before/after export pair has not been captured yet.
+- `planned` — the target is known from Dude docs/static strings/donny's code, but no replay assertion exists yet.
+- `failed` — artifacts exist, but the replay assertion does not match donny's mapping.
+
+Use strict mode only after a local evidence run when you expect all replay-target artifacts to exist:
+
+```sh
+bun run lab:dude-ui:evidence -- --require-live
+```
+
+The matrix intentionally includes planned gaps such as Custom Fields, Agent, map placement, and Polling fields so future agents can see what is **not** grounded yet.
+
 ## Prerequisites
 
 - macOS with a visible desktop session
@@ -60,6 +92,23 @@ bun run labs/dude-ui/session.ts --drive-login --keep
 
 The session exports `before.export`, waits while you make one UI change and save it, then exports `after.export` and writes `diff.json`.
 
+For mapping work, prefer a named evidence mode instead of the generic loop:
+
+```sh
+# RouterOS checkbox evidence: before-routeros-flag.export / after-routeros-flag.export
+bun run labs/dude-ui/session.ts --first-routeros-flag --device-name donny-ui-routeros-flag-manual --drive-login --keep
+
+# Add Device + ping probe evidence: before-add-probe.export / after-add-probe.export
+bun run lab:dude-ui:add-probe -- --device-name donny-ui-probe-target-manual --drive-login
+```
+
+Then run the evidence report:
+
+```sh
+bun run lab:dude-ui:evidence -- --routeros-device-name donny-ui-routeros-flag-manual \
+  --probe-device-name donny-ui-probe-target-manual
+```
+
 ## First concrete mapping target: Device RouterOS flag
 
 The first fully automated client-written mapping currently available without Screen Recording permission is the client-connect server metadata timestamp:
@@ -74,7 +123,7 @@ Replay the assertion after any real client connection:
 ```sh
 bun run labs/dude-ui/first-mapping.ts assert-connect \
   --before labs/dude-ui/artifacts/before.export \
-  --after labs/dude-ui/artifacts/after.export
+  --after labs/dude-ui/artifacts/after-cli-connect.export
 ```
 
 The stronger interactive target remains the device **RouterOS** checkbox.
@@ -86,19 +135,19 @@ The first client-written mapping target is the device **RouterOS** checkbox:
 - Expected value kind: `bool`
 - Default target device name: `donny-ui-routeros-flag-<pid>`
 
-Run a guided session that seeds a known device, exports `before.export`, asks you to toggle the RouterOS checkbox in the Dude client, exports `after.export`, and asserts that the client changed `TAG.DEVICE_ROUTER_OS`:
+Run a guided session that seeds a known device, exports `before-routeros-flag.export`, asks you to toggle the RouterOS checkbox in the Dude client, exports `after-routeros-flag.export`, and asserts that the client changed `TAG.DEVICE_ROUTER_OS`:
 
 ```sh
-bun run labs/dude-ui/session.ts --first-routeros-flag --drive-login --keep
+bun run labs/dude-ui/session.ts --first-routeros-flag --device-name donny-ui-routeros-flag-manual --drive-login --keep
 ```
 
-If a human or external driver already produced `after.export`, replay the assertion without launching a GUI:
+If a human or external driver already produced the artifact pair, replay the assertion without launching a GUI:
 
 ```sh
 bun run labs/dude-ui/first-mapping.ts assert \
-  --before labs/dude-ui/artifacts/before.export \
-  --after labs/dude-ui/artifacts/after.export \
-  --name donny-ui-routeros-flag-12345
+  --before labs/dude-ui/artifacts/before-routeros-flag.export \
+  --after labs/dude-ui/artifacts/after-routeros-flag.export \
+  --name donny-ui-routeros-flag-manual
 ```
 
 The assertion checks both the raw Nova diff and `DudeDB.devices()` decode, so a passing replay means the `routerOS` domain field is grounded by a real client-written export.
@@ -134,6 +183,21 @@ bun run labs/dude-ui/first-mapping.ts assert-probe \
 Pass `--name <device-name>` to scope to one specific device when the export contains other concurrent writes. Pass `--expected-probe-type <id>` to require a specific probe template (omit for any). The assertion fails loudly if the new device, the new probe-config, or the linked service is missing from `DudeDB.devices()` / `probeConfigs()` / `services()`.
 
 A synthetic version of this assertion runs in `test/unit/diff.test.ts` using `DudeDB.inMemory().addDevice(...)` so the assertion logic itself is regression-tested even before live evidence exists.
+
+## How to add the next UI field
+
+1. Pick a target from `bun run lab:dude-ui:evidence` with `planned`, `static`, `synthetic`, or `cli-written` evidence.
+2. Use the Dude docs terms in `labs/dude-ui/evidence.ts` (`dudeTerm`, `area`, and `docs`); do not invent donny-only names when the client has a visible label.
+3. Capture a before/after pair with exactly one intentional UI write. Artifact names should be stable: `before-<target>.export`, `after-<target>.export`, and `<target>-diff.json`.
+4. Add or extend an assertion in `labs/dude-ui/first-mapping.ts` that checks:
+   - the expected raw Nova tag(s) changed or were added;
+   - the value equals the known value entered in the UI;
+   - the corresponding `DudeDB` domain reader returns the same value, if donny exposes that domain field;
+   - unexpected unknown changes are reported, not silently ignored.
+5. Add the target to `EVIDENCE_TARGETS` in `labs/dude-ui/evidence.ts`.
+6. Add a synthetic unit test only for the assertion mechanics. Do not mark the target as grounded until `bun run lab:dude-ui:evidence` passes against live `dude.exe` artifacts.
+
+Use non-secret dummy values for credential-like fields. Never commit real `.db`, `.export`, screenshots, or pcaps from a production Dude server.
 
 Manual equivalent:
 

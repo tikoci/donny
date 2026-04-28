@@ -36,6 +36,28 @@ Unit tests live in `test/unit/` and use byte-literal fixtures — hand-construct
 
 Run: `bun test test/unit/`
 
+## Local Dude UI Evidence
+
+The Wine-hosted Windows Dude client is the source of truth for UI field names and
+client-written mappings. Unit tests prove codec behavior; they do **not** prove
+that donny's names or semantics match the real Dude UI.
+
+Use this local-only evidence workflow when grounding UI mappings:
+
+```sh
+bun run lab:dude-ui:evidence
+```
+
+- `grounded` means live `dude.exe` before/after exports exist and the replay assertion passed.
+- `missing-artifact` means an assertion exists but the Wine UI artifact pair has not been captured.
+- `planned` means the Dude docs/client strings identify a target, but donny has no replay assertion yet.
+
+Never mark a field as client-grounded because a synthetic unit test passes. Add or
+extend `labs/dude-ui/first-mapping.ts`, then register the target in
+`labs/dude-ui/evidence.ts`, then capture real artifacts with
+`labs/dude-ui/session.ts`. See `labs/dude-ui/README.md` for run commands and
+artifact naming conventions.
+
 ## Adding Object Types
 
 To add support for a new object category (e.g., outages, users):
