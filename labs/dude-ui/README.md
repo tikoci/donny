@@ -34,7 +34,7 @@ Use strict mode only after a local evidence run when you expect all replay-targe
 bun run lab:dude-ui:evidence -- --require-live
 ```
 
-The matrix intentionally includes planned gaps such as Custom Fields, Agent, map placement, and Polling fields so future agents can see what is **not** grounded yet.
+The matrix intentionally includes planned gaps such as Agent and map placement, plus missing-artifact replay targets for Device Settings fields, so future agents can see what is **not** grounded yet.
 
 ## Prerequisites
 
@@ -92,21 +92,35 @@ bun run labs/dude-ui/session.ts --drive-login --keep
 
 The session exports `before.export`, waits while you make one UI change and save it, then exports `after.export` and writes `diff.json`.
 
-For mapping work, prefer a named evidence mode instead of the generic loop:
+For mapping work, prefer a named evidence target instead of the generic loop. The target id comes from `bun run lab:dude-ui:evidence`; the session command uses `labs/dude-ui/evidence.ts` for the artifact names, seed device name, expected value, and UI instructions:
+
+```sh
+bun run lab:dude-ui:target device-name --drive-login --keep
+bun run lab:dude-ui:target device-addresses --drive-login --keep
+bun run lab:dude-ui:target device-username --drive-login --keep
+bun run lab:dude-ui:target device-password --drive-login --keep
+bun run lab:dude-ui:target device-enabled --drive-login --keep
+bun run lab:dude-ui:target device-probe-interval --drive-login --keep
+bun run lab:dude-ui:target device-snmp-enabled --drive-login --keep
+bun run lab:dude-ui:target device-custom-field-1 --drive-login --keep
+bun run lab:dude-ui:target device-custom-field-2 --drive-login --keep
+bun run lab:dude-ui:target device-custom-field-3 --drive-login --keep
+```
+
+The session prints the exact value to enter in the Dude UI, exports the before/after pair, writes `<target-id>-diff.json`, and immediately replays the target assertion. After one or more targets are captured, rerun:
+
+```sh
+bun run lab:dude-ui:evidence
+```
+
+Older specialized modes still work:
 
 ```sh
 # RouterOS checkbox evidence: before-routeros-flag.export / after-routeros-flag.export
 bun run labs/dude-ui/session.ts --first-routeros-flag --device-name donny-ui-routeros-flag-manual --drive-login --keep
 
 # Add Device + ping probe evidence: before-add-probe.export / after-add-probe.export
-bun run lab:dude-ui:add-probe -- --device-name donny-ui-probe-target-manual --drive-login
-```
-
-Then run the evidence report:
-
-```sh
-bun run lab:dude-ui:evidence -- --routeros-device-name donny-ui-routeros-flag-manual \
-  --probe-device-name donny-ui-probe-target-manual
+bun run lab:dude-ui:add-probe -- --drive-login
 ```
 
 ## First concrete mapping target: Device RouterOS flag
@@ -133,7 +147,7 @@ The first client-written mapping target is the device **RouterOS** checkbox:
 - Nova tag: `TAG.DEVICE_ROUTER_OS`
 - Hex tag: `0x1f4a`
 - Expected value kind: `bool`
-- Default target device name: `donny-ui-routeros-flag-<pid>`
+- Default target device name for evidence target mode: `donny-ui-routeros-flag-target`
 
 Run a guided session that seeds a known device, exports `before-routeros-flag.export`, asks you to toggle the RouterOS checkbox in the Dude client, exports `after-routeros-flag.export`, and asserts that the client changed `TAG.DEVICE_ROUTER_OS`:
 
@@ -166,7 +180,7 @@ Run a guided session that exports `before-add-probe.export`, asks you to add a n
 ```sh
 bun run lab:dude-ui:add-probe
 # equivalent to:
-bun run labs/dude-ui/session.ts --add-device-with-probe --keep
+bun run labs/dude-ui/session.ts --evidence-target device-add-with-ping-probe --keep
 ```
 
 If a human or external driver already produced `after-add-probe.export`, replay the assertion without launching a GUI:

@@ -9,32 +9,39 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { TAG } from "../../src/index.ts";
+import { ipv4ToU32, TAG } from "../../src/index.ts";
+import type { ComparableNovaValue } from "../../src/index.ts";
 import {
   assertClientConnectMapping,
+  assertDeviceFieldMapping,
   assertProbeAddedMapping,
   assertRouterOsFlagMapping,
 } from "./first-mapping.ts";
 
-type EvidenceKind =
+export type EvidenceKind =
   | "client-written"
   | "cli-written"
   | "synthetic"
   | "static"
   | "planned";
 
-type AssertionKind = "client-connect" | "routeros-flag" | "probe-added";
+type AssertionKind = "client-connect" | "routeros-flag" | "probe-added" | "device-field";
 
-interface EvidenceAssertion {
+export interface EvidenceAssertion {
   kind: AssertionKind;
   before: string;
   after: string;
   deviceName?: string;
+  seedDeviceName?: string;
   expectedRouterOs?: boolean;
   expectedProbeTypeId?: number;
+  tag?: number;
+  expectedAfter?: ComparableNovaValue;
+  decodedField?: "name" | "address" | "username" | "password" | "routerOS" | "snmpEnabled" | "snmpProfileId" | "pollInterval";
+  expectedDecodedAfter?: string | number | boolean;
 }
 
-interface EvidenceTarget {
+export interface EvidenceTarget {
   id: string;
   area: string;
   dudeTerm: string;
@@ -43,6 +50,7 @@ interface EvidenceTarget {
   kind: EvidenceKind;
   docs: string;
   assertion?: EvidenceAssertion;
+  instructions?: string;
   notes: string;
 }
 
@@ -54,6 +62,31 @@ interface TargetResult {
 
 const DEVICE_SETTINGS_DOC = "The Dude v6 Device settings";
 const PROBES_DOC = "The Dude v6 Probes";
+
+const FIELD_VALUES = {
+  nameBefore: "donny-ui-name-before",
+  nameAfter: "donny-ui-name-after",
+  routerOsDevice: "donny-ui-routeros-flag-target",
+  probeDevice: "donny-ui-probe-target",
+  addressDevice: "donny-ui-address-target",
+  address: "10.77.0.11",
+  dnsDevice: "donny-ui-dns-target",
+  dnsName: "donny-ui-target.example.invalid",
+  usernameDevice: "donny-ui-username-target",
+  username: "donny-ui-user",
+  passwordDevice: "donny-ui-password-target",
+  password: "donny-ui-pass",
+  enabledDevice: "donny-ui-enabled-target",
+  pollDevice: "donny-ui-poll-target",
+  pollInterval: 120,
+  snmpDevice: "donny-ui-snmp-target",
+  customField1Device: "donny-ui-custom-field-1-target",
+  customField1: "donny-custom-field-1",
+  customField2Device: "donny-ui-custom-field-2-target",
+  customField2: "donny-custom-field-2",
+  customField3Device: "donny-ui-custom-field-3-target",
+  customField3: "donny-custom-field-3",
+} as const;
 
 export const EVIDENCE_TARGETS: EvidenceTarget[] = [
   {
@@ -83,8 +116,11 @@ export const EVIDENCE_TARGETS: EvidenceTarget[] = [
       kind: "routeros-flag",
       before: "before-routeros-flag.export",
       after: "after-routeros-flag.export",
+      seedDeviceName: FIELD_VALUES.routerOsDevice,
+      deviceName: FIELD_VALUES.routerOsDevice,
       expectedRouterOs: true,
     },
+    instructions: `Seeded device is ${FIELD_VALUES.routerOsDevice}; in Device Settings > General, check RouterOS.`,
     notes: "Requires adding --device-name when replaying if artifact naming does not encode the target name.",
   },
   {
@@ -103,8 +139,10 @@ export const EVIDENCE_TARGETS: EvidenceTarget[] = [
       kind: "probe-added",
       before: "before-add-probe.export",
       after: "after-add-probe.export",
+      deviceName: FIELD_VALUES.probeDevice,
       expectedProbeTypeId: 10160,
     },
+    instructions: `Use the Add Device wizard to create a new device named ${FIELD_VALUES.probeDevice}, then select the ping probe/service.`,
     notes: "Synthetic unit coverage exists; live evidence requires dude.exe to create the device and probe.",
   },
   {
@@ -113,9 +151,21 @@ export const EVIDENCE_TARGETS: EvidenceTarget[] = [
     dudeTerm: "Name",
     donnySurface: "Device.name",
     nova: `TAG.NAME (0x${TAG.NAME.toString(16)})`,
-    kind: "cli-written",
+    kind: "client-written",
     docs: DEVICE_SETTINGS_DOC,
-    notes: "Known generic NAME decode, but not yet grounded as a client-edited Device Settings field.",
+    assertion: {
+      kind: "device-field",
+      before: "before-device-name.export",
+      after: "after-device-name.export",
+      seedDeviceName: FIELD_VALUES.nameBefore,
+      deviceName: FIELD_VALUES.nameAfter,
+      tag: TAG.NAME,
+      expectedAfter: { kind: "str", value: FIELD_VALUES.nameAfter },
+      decodedField: "name",
+      expectedDecodedAfter: FIELD_VALUES.nameAfter,
+    },
+    instructions: `Seeded device starts as ${FIELD_VALUES.nameBefore}; in Device Settings > General, change Name to ${FIELD_VALUES.nameAfter}.`,
+    notes: "Generic NAME decode is known; this replay target grounds that the Device Settings label maps to TAG.NAME for devices.",
   },
   {
     id: "device-addresses",
@@ -123,9 +173,21 @@ export const EVIDENCE_TARGETS: EvidenceTarget[] = [
     dudeTerm: "Addresses",
     donnySurface: "Device.address",
     nova: `TAG.DEVICE_IP (0x${TAG.DEVICE_IP.toString(16)})`,
-    kind: "cli-written",
+    kind: "client-written",
     docs: DEVICE_SETTINGS_DOC,
-    notes: "RouterOS CLI/export and unit fixtures cover decode; client UI editing evidence still needed.",
+    assertion: {
+      kind: "device-field",
+      before: "before-device-addresses.export",
+      after: "after-device-addresses.export",
+      seedDeviceName: FIELD_VALUES.addressDevice,
+      deviceName: FIELD_VALUES.addressDevice,
+      tag: TAG.DEVICE_IP,
+      expectedAfter: { kind: "u32[]", value: [ipv4ToU32(FIELD_VALUES.address)] },
+      decodedField: "address",
+      expectedDecodedAfter: FIELD_VALUES.address,
+    },
+    instructions: `In Device Settings > General, set Addresses to exactly ${FIELD_VALUES.address}.`,
+    notes: "RouterOS CLI/export and unit fixtures cover decode; this replay target grounds the client UI field.",
   },
   {
     id: "device-dns-names",
@@ -133,19 +195,63 @@ export const EVIDENCE_TARGETS: EvidenceTarget[] = [
     dudeTerm: "DNS names",
     donnySurface: "Device.address for DNS-mode devices",
     nova: `TAG.DEVICE_DNS_NAMES (0x${TAG.DEVICE_DNS_NAMES.toString(16)})`,
-    kind: "cli-written",
+    kind: "client-written",
     docs: DEVICE_SETTINGS_DOC,
-    notes: "QuickCHR DNS-mode integration covers current decode; client UI editing evidence still needed.",
+    assertion: {
+      kind: "device-field",
+      before: "before-device-dns-names.export",
+      after: "after-device-dns-names.export",
+      seedDeviceName: FIELD_VALUES.dnsDevice,
+      deviceName: FIELD_VALUES.dnsDevice,
+      tag: TAG.DEVICE_DNS_NAMES,
+      expectedAfter: { kind: "str[]", value: [FIELD_VALUES.dnsName] },
+    },
+    instructions: `In Device Settings > General, set DNS names to exactly ${FIELD_VALUES.dnsName}. If the UI also requires clearing Addresses, do that in the same save and inspect the diff before marking grounded.`,
+    notes: "QuickCHR DNS-mode integration covers current decode; this target grounds the client UI DNS names field and will reveal whether address clearing is also required.",
   },
   {
-    id: "device-credentials",
+    id: "device-username",
     area: "Device / General",
-    dudeTerm: "Username and Password",
-    donnySurface: "Device.username / Device.password",
-    nova: `TAG.DEVICE_USERNAME (0x${TAG.DEVICE_USERNAME.toString(16)}), TAG.DEVICE_PASSWORD (0x${TAG.DEVICE_PASSWORD.toString(16)})`,
-    kind: "synthetic",
+    dudeTerm: "Username",
+    donnySurface: "Device.username",
+    nova: `TAG.DEVICE_USERNAME (0x${TAG.DEVICE_USERNAME.toString(16)})`,
+    kind: "client-written",
     docs: DEVICE_SETTINGS_DOC,
-    notes: "Encoded/decoded in unit fixtures; live evidence must use non-secret dummy values only.",
+    assertion: {
+      kind: "device-field",
+      before: "before-device-username.export",
+      after: "after-device-username.export",
+      seedDeviceName: FIELD_VALUES.usernameDevice,
+      deviceName: FIELD_VALUES.usernameDevice,
+      tag: TAG.DEVICE_USERNAME,
+      expectedAfter: { kind: "str", value: FIELD_VALUES.username },
+      decodedField: "username",
+      expectedDecodedAfter: FIELD_VALUES.username,
+    },
+    instructions: `In Device Settings > General, set Username to the non-secret dummy value ${FIELD_VALUES.username}.`,
+    notes: "Use only dummy values. Unit fixtures cover encode/decode, but this target grounds the UI label.",
+  },
+  {
+    id: "device-password",
+    area: "Device / General",
+    dudeTerm: "Password",
+    donnySurface: "Device.password",
+    nova: `TAG.DEVICE_PASSWORD (0x${TAG.DEVICE_PASSWORD.toString(16)})`,
+    kind: "client-written",
+    docs: DEVICE_SETTINGS_DOC,
+    assertion: {
+      kind: "device-field",
+      before: "before-device-password.export",
+      after: "after-device-password.export",
+      seedDeviceName: FIELD_VALUES.passwordDevice,
+      deviceName: FIELD_VALUES.passwordDevice,
+      tag: TAG.DEVICE_PASSWORD,
+      expectedAfter: { kind: "str", value: FIELD_VALUES.password },
+      decodedField: "password",
+      expectedDecodedAfter: FIELD_VALUES.password,
+    },
+    instructions: `In Device Settings > General, set Password to the non-secret dummy value ${FIELD_VALUES.password}.`,
+    notes: "Use only dummy values. Artifacts may still contain plaintext credentials and must not be committed if they come from real infrastructure.",
   },
   {
     id: "device-enabled",
@@ -153,9 +259,19 @@ export const EVIDENCE_TARGETS: EvidenceTarget[] = [
     dudeTerm: "Enabled",
     donnySurface: "not currently exposed on Device",
     nova: `TAG.DEVICE_ENABLED (0x${TAG.DEVICE_ENABLED.toString(16)})`,
-    kind: "planned",
+    kind: "client-written",
     docs: DEVICE_SETTINGS_DOC,
-    notes: "Important gap: tag exists in encoder but domain type does not expose it yet.",
+    assertion: {
+      kind: "device-field",
+      before: "before-device-enabled.export",
+      after: "after-device-enabled.export",
+      seedDeviceName: FIELD_VALUES.enabledDevice,
+      deviceName: FIELD_VALUES.enabledDevice,
+      tag: TAG.DEVICE_ENABLED,
+      expectedAfter: { kind: "bool", value: false },
+    },
+    instructions: "In Device Settings > Polling, uncheck Enabled.",
+    notes: "Important gap: tag exists in encoder but domain type does not expose it yet. This assertion is raw-Nova only until Device.enabled exists.",
   },
   {
     id: "device-probe-interval",
@@ -163,29 +279,103 @@ export const EVIDENCE_TARGETS: EvidenceTarget[] = [
     dudeTerm: "Probe interval",
     donnySurface: "Device.pollInterval",
     nova: `TAG.DEVICE_POLL_INTERVAL (0x${TAG.DEVICE_POLL_INTERVAL.toString(16)})`,
-    kind: "synthetic",
+    kind: "client-written",
     docs: DEVICE_SETTINGS_DOC,
-    notes: "Decode exists, but UI term/value units need client-written evidence.",
+    assertion: {
+      kind: "device-field",
+      before: "before-device-probe-interval.export",
+      after: "after-device-probe-interval.export",
+      seedDeviceName: FIELD_VALUES.pollDevice,
+      deviceName: FIELD_VALUES.pollDevice,
+      tag: TAG.DEVICE_POLL_INTERVAL,
+      expectedAfter: { kind: "u8", value: FIELD_VALUES.pollInterval },
+      decodedField: "pollInterval",
+      expectedDecodedAfter: FIELD_VALUES.pollInterval,
+    },
+    instructions: `In Device Settings > Polling, set Probe interval to ${FIELD_VALUES.pollInterval} seconds.`,
+    notes: "Decode exists, but UI value units and tcode shape need client-written evidence.",
   },
   {
-    id: "device-snmp-profile",
+    id: "device-snmp-enabled",
     area: "Device / General",
-    dudeTerm: "SNMP profile",
-    donnySurface: "Device.snmpEnabled / Device.snmpProfileId",
-    nova: `TAG.DEVICE_SNMP_ENABLED (0x${TAG.DEVICE_SNMP_ENABLED.toString(16)}), TAG.DEVICE_SNMP_PROFILE (0x${TAG.DEVICE_SNMP_PROFILE.toString(16)})`,
-    kind: "synthetic",
+    dudeTerm: "SNMP profile enabled",
+    donnySurface: "Device.snmpEnabled",
+    nova: `TAG.DEVICE_SNMP_ENABLED (0x${TAG.DEVICE_SNMP_ENABLED.toString(16)})`,
+    kind: "client-written",
     docs: DEVICE_SETTINGS_DOC,
-    notes: "Decode exists; client evidence still needed for checkbox/profile semantics.",
+    assertion: {
+      kind: "device-field",
+      before: "before-device-snmp-enabled.export",
+      after: "after-device-snmp-enabled.export",
+      seedDeviceName: FIELD_VALUES.snmpDevice,
+      deviceName: FIELD_VALUES.snmpDevice,
+      tag: TAG.DEVICE_SNMP_ENABLED,
+      expectedAfter: { kind: "bool", value: true },
+      decodedField: "snmpEnabled",
+      expectedDecodedAfter: true,
+    },
+    instructions: "In Device Settings > General, enable SNMP for the default SNMP profile without changing the profile selection.",
+    notes: "Decode exists; this target grounds the checkbox semantics separately from profile object ID selection.",
   },
   {
-    id: "device-custom-fields",
+    id: "device-custom-field-1",
     area: "Device / General",
-    dudeTerm: "Custom Fields",
+    dudeTerm: "Custom Fields / CustomField1",
+    donnySurface: "not currently exposed on Device; current tag name is TAG.DEVICE_NOTES",
+    nova: `TAG.DEVICE_NOTES (0x${TAG.DEVICE_NOTES.toString(16)})`,
+    kind: "client-written",
+    docs: DEVICE_SETTINGS_DOC,
+    assertion: {
+      kind: "device-field",
+      before: "before-device-custom-field-1.export",
+      after: "after-device-custom-field-1.export",
+      seedDeviceName: FIELD_VALUES.customField1Device,
+      deviceName: FIELD_VALUES.customField1Device,
+      tag: TAG.DEVICE_NOTES,
+      expectedAfter: { kind: "str", value: FIELD_VALUES.customField1 },
+    },
+    instructions: `In Device Settings > General > Custom Fields, set CustomField1 to ${FIELD_VALUES.customField1}.`,
+    notes: "Likely naming mismatch: encoded fixture comments call this custom_str_1 while donny currently names the tag DEVICE_NOTES. Live evidence should decide whether to rename/expose it.",
+  },
+  {
+    id: "device-custom-field-2",
+    area: "Device / General",
+    dudeTerm: "Custom Fields / CustomField2",
+    donnySurface: "not currently exposed on Device; current tag name is TAG.DEVICE_LABEL",
+    nova: `TAG.DEVICE_LABEL (0x${TAG.DEVICE_LABEL.toString(16)})`,
+    kind: "client-written",
+    docs: DEVICE_SETTINGS_DOC,
+    assertion: {
+      kind: "device-field",
+      before: "before-device-custom-field-2.export",
+      after: "after-device-custom-field-2.export",
+      seedDeviceName: FIELD_VALUES.customField2Device,
+      deviceName: FIELD_VALUES.customField2Device,
+      tag: TAG.DEVICE_LABEL,
+      expectedAfter: { kind: "str", value: FIELD_VALUES.customField2 },
+    },
+    instructions: `In Device Settings > General > Custom Fields, set CustomField2 to ${FIELD_VALUES.customField2}.`,
+    notes: "Likely naming mismatch: encoded fixture comments call this custom_str_2 while donny currently names the tag DEVICE_LABEL.",
+  },
+  {
+    id: "device-custom-field-3",
+    area: "Device / General",
+    dudeTerm: "Custom Fields / CustomField3",
     donnySurface: "not currently exposed on Device",
     nova: `TAG.DEVICE_CUSTOM_FIELD (0x${TAG.DEVICE_CUSTOM_FIELD.toString(16)})`,
-    kind: "static",
+    kind: "client-written",
     docs: DEVICE_SETTINGS_DOC,
-    notes: "dude.exe strings include CustomField1..3, but the DB shape and donny domain model are not grounded.",
+    assertion: {
+      kind: "device-field",
+      before: "before-device-custom-field-3.export",
+      after: "after-device-custom-field-3.export",
+      seedDeviceName: FIELD_VALUES.customField3Device,
+      deviceName: FIELD_VALUES.customField3Device,
+      tag: TAG.DEVICE_CUSTOM_FIELD,
+      expectedAfter: { kind: "str", value: FIELD_VALUES.customField3 },
+    },
+    instructions: `In Device Settings > General > Custom Fields, set CustomField3 to ${FIELD_VALUES.customField3}.`,
+    notes: "dude.exe strings include CustomField1..3, but the DB behavior and domain model are not grounded yet.",
   },
   {
     id: "device-agent",
@@ -252,6 +442,21 @@ function runAssertion(target: EvidenceTarget, artifactDir: string): string {
         expectedProbeTypeId: assertion.expectedProbeTypeId,
       });
       return `device ${result.deviceId}, probe-config ${result.probeId}, service ${result.serviceId}, probeType ${result.probeTypeId}`;
+    }
+    case "device-field": {
+      if (!assertion.deviceName || assertion.tag === undefined || !assertion.expectedAfter) {
+        throw new Error("device-field assertion requires deviceName, tag, and expectedAfter");
+      }
+      const result = assertDeviceFieldMapping({
+        beforePath,
+        afterPath,
+        deviceName: assertion.deviceName,
+        tag: assertion.tag,
+        expectedAfter: assertion.expectedAfter,
+        decodedField: assertion.decodedField,
+        expectedDecodedAfter: assertion.expectedDecodedAfter,
+      });
+      return `device ${result.objectId} ${result.fieldKey}: ${JSON.stringify(result.beforeValue)} -> ${JSON.stringify(result.afterValue)}${result.decodedField ? `; decoded ${result.decodedField}=${JSON.stringify(result.decodedAfter)}` : ""}`;
     }
   }
 }

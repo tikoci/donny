@@ -9,7 +9,8 @@ describe("Dude UI evidence manifest", () => {
     expect(EVIDENCE_TARGETS.map((target) => target.id)).toContain("server-last-client-connect");
     expect(EVIDENCE_TARGETS.map((target) => target.id)).toContain("device-routeros-flag");
     expect(EVIDENCE_TARGETS.map((target) => target.id)).toContain("device-add-with-ping-probe");
-    expect(EVIDENCE_TARGETS.map((target) => target.dudeTerm)).toContain("Custom Fields");
+    expect(EVIDENCE_TARGETS.map((target) => target.id)).toContain("device-username");
+    expect(EVIDENCE_TARGETS.map((target) => target.id)).toContain("device-custom-field-1");
   });
 
   test("grounds the committed client-connect evidence and reports missing live probe evidence", () => {

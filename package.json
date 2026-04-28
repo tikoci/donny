@@ -30,8 +30,9 @@
     "test:integration:dude-ui": "DONNY_DUDE_UI=1 bun test test/integration/dude-ui-local.test.ts",
     "lab:dude-ui": "bun run labs/dude-ui/session.ts",
     "lab:dude-ui:evidence": "bun run labs/dude-ui/evidence.ts",
+    "lab:dude-ui:target": "bun run labs/dude-ui/session.ts --evidence-target",
     "lab:dude-ui:assert-connect": "bun run labs/dude-ui/first-mapping.ts assert-connect --before labs/dude-ui/artifacts/before.export --after labs/dude-ui/artifacts/after-cli-connect.export",
-    "lab:dude-ui:add-probe": "bun run labs/dude-ui/session.ts --add-device-with-probe --keep",
+    "lab:dude-ui:add-probe": "bun run labs/dude-ui/session.ts --evidence-target device-add-with-ping-probe --keep",
     "lab:dude-ui:assert-probe": "bun run labs/dude-ui/first-mapping.ts assert-probe --before labs/dude-ui/artifacts/before-add-probe.export --after labs/dude-ui/artifacts/after-add-probe.export --expected-probe-type 10160",
     "dev": "bun run src/cli/index.ts"
   },

@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { assertClientConnectMapping, assertProbeAddedMapping, assertRouterOsFlagMapping } from "../../labs/dude-ui/first-mapping.ts";
-import { diffDudeDbs, DudeDB, encodeDevice, TAG } from "../../src/index.ts";
+import { assertClientConnectMapping, assertDeviceFieldMapping, assertProbeAddedMapping, assertRouterOsFlagMapping } from "../../labs/dude-ui/first-mapping.ts";
+import { diffDudeDbs, DudeDB, encodeDevice, ipv4ToU32, TAG } from "../../src/index.ts";
 
 const scratchBefore = join(import.meta.dir, ".first-mapping-before.db");
 const scratchAfter = join(import.meta.dir, ".first-mapping-after.db");
@@ -128,6 +128,46 @@ describe("Dude DB diff", () => {
       expect(result.fieldKey).toBe("0x1f4a#0");
       expect(result.beforeValue).toBe(false);
       expect(result.afterValue).toBe(true);
+    } finally {
+      rmSync(scratchBefore, { force: true });
+      rmSync(scratchAfter, { force: true });
+    }
+  });
+
+  test("asserts generic device field mapping and decoded domain value", () => {
+    rmSync(scratchBefore, { force: true });
+    rmSync(scratchAfter, { force: true });
+
+    for (const [path, address] of [
+      [scratchBefore, "10.0.0.1"],
+      [scratchAfter, "10.77.0.11"],
+    ] as const) {
+      const db = new Database(path);
+      try {
+        db.exec("CREATE TABLE objs (id integer primary key, obj blob)");
+        db.query("INSERT INTO objs (id, obj) VALUES (?, ?)").run(
+          10000,
+          encodeDevice({ id: 10000, name: "device-address-target", address }),
+        );
+      } finally {
+        db.close();
+      }
+    }
+
+    try {
+      const result = assertDeviceFieldMapping({
+        beforePath: scratchBefore,
+        afterPath: scratchAfter,
+        deviceName: "device-address-target",
+        tag: TAG.DEVICE_IP,
+        expectedAfter: { kind: "u32[]", value: [ipv4ToU32("10.77.0.11")] },
+        decodedField: "address",
+        expectedDecodedAfter: "10.77.0.11",
+      });
+
+      expect(result.objectId).toBe(10000);
+      expect(result.fieldKey).toBe("0x1f40#0");
+      expect(result.decodedAfter).toBe("10.77.0.11");
     } finally {
       rmSync(scratchBefore, { force: true });
       rmSync(scratchAfter, { force: true });

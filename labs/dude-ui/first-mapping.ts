@@ -6,7 +6,7 @@
  */
 
 import { diffDudeDbFiles, DudeDB, RANGE, TAG } from "../../src/index.ts";
-import type { AddedOrRemovedObject, ChangedObject, ComparableNovaField, ComparableNovaValue, DudeDbDiff, ProbeConfig, Service } from "../../src/index.ts";
+import type { AddedOrRemovedObject, ChangedObject, ComparableNovaField, ComparableNovaValue, Device, DudeDbDiff, ProbeConfig, Service } from "../../src/index.ts";
 
 export const FIRST_ROUTEROS_FLAG_DEVICE_PREFIX = "donny-ui-routeros-flag";
 export const PROBE_TARGET_DEVICE_PREFIX = "donny-ui-probe-target";
@@ -60,6 +60,34 @@ export interface ProbeAddedMappingResult {
   diff: DudeDbDiff;
 }
 
+type DeviceDecodedField = keyof Pick<Device, "name" | "address" | "username" | "password" | "routerOS" | "snmpEnabled" | "snmpProfileId" | "pollInterval">;
+
+type DeviceDecodedValue = string | number | boolean | undefined;
+
+export interface DeviceFieldMappingAssertion {
+  beforePath: string;
+  afterPath: string;
+  /** Object NAME before or after the edit; diff matching checks both sides. */
+  deviceName: string;
+  tag: number;
+  expectedAfter: ComparableNovaValue;
+  /** Optional cross-check against DudeDB.devices() when donny exposes the field. */
+  decodedField?: DeviceDecodedField;
+  expectedDecodedAfter?: Exclude<DeviceDecodedValue, undefined>;
+}
+
+export interface DeviceFieldMappingResult {
+  objectId: number;
+  nameBefore?: string;
+  nameAfter?: string;
+  fieldKey: string;
+  beforeValue?: ComparableNovaValue;
+  afterValue: ComparableNovaValue;
+  decodedField?: DeviceDecodedField;
+  decodedAfter?: DeviceDecodedValue;
+  diff: DudeDbDiff;
+}
+
 function boolValue(value: ComparableNovaValue | undefined): boolean | undefined {
   if (!value) return undefined;
   if (value.kind !== "bool") {
@@ -78,6 +106,10 @@ function numericValue(value: ComparableNovaValue | undefined): number | undefine
 
 function fieldValue(fields: ComparableNovaField[], tag: number): ComparableNovaValue | undefined {
   return fields.find((field) => field.tag === tag)?.value;
+}
+
+function valuesEqual(a: ComparableNovaValue | undefined, b: ComparableNovaValue | undefined): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 function summarizeObject(object: ChangedObject): string {
@@ -134,6 +166,77 @@ function readDeviceRouterOs(path: string, deviceName: string): boolean | undefin
   } finally {
     db.close();
   }
+}
+
+function readDecodedDeviceField(path: string, deviceId: number, field: DeviceDecodedField): DeviceDecodedValue {
+  const db = DudeDB.openAuto(path, { readonly: true });
+  try {
+    return db.devices().find((device) => device.id === deviceId)?.[field];
+  } finally {
+    db.close();
+  }
+}
+
+export function assertDeviceFieldMapping(options: DeviceFieldMappingAssertion): DeviceFieldMappingResult {
+  const diff = diffDudeDbFiles(options.beforePath, options.afterPath, { objectName: options.deviceName });
+
+  for (const object of diff.changedObjects) {
+    for (const field of object.changedFields) {
+      if (field.tag !== options.tag) continue;
+      if (!valuesEqual(field.after, options.expectedAfter)) continue;
+
+      const decodedAfter = options.decodedField
+        ? readDecodedDeviceField(options.afterPath, object.id, options.decodedField)
+        : undefined;
+      if (options.decodedField && options.expectedDecodedAfter !== undefined && decodedAfter !== options.expectedDecodedAfter) {
+        throw new Error(
+          `DudeDB.devices() decoded ${options.decodedField}=${JSON.stringify(decodedAfter)} for object ${object.id}, expected ${JSON.stringify(options.expectedDecodedAfter)}`,
+        );
+      }
+
+      return {
+        objectId: object.id,
+        nameBefore: object.nameBefore,
+        nameAfter: object.nameAfter,
+        fieldKey: field.key,
+        beforeValue: field.before,
+        afterValue: field.after,
+        decodedField: options.decodedField,
+        decodedAfter,
+        diff,
+      };
+    }
+
+    for (const field of object.addedFields) {
+      if (field.tag !== options.tag) continue;
+      if (!valuesEqual(field.value, options.expectedAfter)) continue;
+
+      const decodedAfter = options.decodedField
+        ? readDecodedDeviceField(options.afterPath, object.id, options.decodedField)
+        : undefined;
+      if (options.decodedField && options.expectedDecodedAfter !== undefined && decodedAfter !== options.expectedDecodedAfter) {
+        throw new Error(
+          `DudeDB.devices() decoded ${options.decodedField}=${JSON.stringify(decodedAfter)} for object ${object.id}, expected ${JSON.stringify(options.expectedDecodedAfter)}`,
+        );
+      }
+
+      return {
+        objectId: object.id,
+        nameBefore: object.nameBefore,
+        nameAfter: object.nameAfter,
+        fieldKey: field.key,
+        afterValue: field.value,
+        decodedField: options.decodedField,
+        decodedAfter,
+        diff,
+      };
+    }
+  }
+
+  throw new Error(
+    `no ${tagName(options.tag)} change to ${JSON.stringify(options.expectedAfter)} found for ${JSON.stringify(options.deviceName)}; changed objects:\n`
+    + diff.changedObjects.map(summarizeObject).join("\n"),
+  );
 }
 
 export function assertRouterOsFlagMapping(options: RouterOsFlagMappingAssertion): RouterOsFlagMappingResult {
@@ -309,6 +412,7 @@ Usage:
   bun run labs/dude-ui/first-mapping.ts assert --before before.export --after after.export --name <device-name> [--expected-routeros true|false] [--json]
   bun run labs/dude-ui/first-mapping.ts assert-connect --before before.export --after after.export [--json]
   bun run labs/dude-ui/first-mapping.ts assert-probe --before before.export --after after.export [--name <device-name>] [--expected-probe-type <id>] [--json]
+  bun run labs/dude-ui/first-mapping.ts assert-device-field --before before.export --after after.export --name <device-name> --tag <hex|dec> --expected-kind <kind> --expected-value <value> [--decoded-field <field>] [--expected-decoded <value>] [--json]
 `;
 }
 
@@ -323,19 +427,68 @@ function parseBool(value: string | undefined): boolean {
   usage();
 }
 
+function parseTag(value: string | undefined): number {
+  const tag = value?.startsWith("0x")
+    ? Number.parseInt(value.slice(2), 16)
+    : Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(tag)) usage();
+  return tag;
+}
+
+function parseExpectedValue(kind: string | undefined, value: string | undefined): ComparableNovaValue {
+  switch (kind) {
+    case "bool":
+      return { kind, value: parseBool(value) };
+    case "u8":
+    case "u32": {
+      const n = Number.parseInt(value ?? "", 10);
+      if (!Number.isFinite(n)) usage();
+      return { kind, value: n };
+    }
+    case "str":
+      return { kind, value: value ?? "" };
+    case "u32[]":
+      return {
+        kind,
+        value: (value ?? "").split(",").filter(Boolean).map((part) => {
+          const n = Number.parseInt(part, 10);
+          if (!Number.isFinite(n)) usage();
+          return n;
+        }),
+      };
+    case "str[]":
+      return { kind, value: (value ?? "").split(",").filter(Boolean) };
+    default:
+      usage();
+  }
+}
+
+function parseDecodedValue(value: string | undefined): Exclude<DeviceDecodedValue, undefined> | undefined {
+  if (value === undefined) return undefined;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (/^-?\d+$/.test(value)) return Number.parseInt(value, 10);
+  return value;
+}
+
 if (import.meta.main) {
   const args = process.argv.slice(2);
   if (args.includes("--help") || args.includes("-h") || args[0] === "help") {
     console.log(helpText());
     process.exit(0);
   }
-  if (args[0] !== "assert" && args[0] !== "assert-connect" && args[0] !== "assert-probe") usage();
+  if (args[0] !== "assert" && args[0] !== "assert-connect" && args[0] !== "assert-probe" && args[0] !== "assert-device-field") usage();
 
   let beforePath = "";
   let afterPath = "";
   let deviceName = "";
   let expectedAfter = true;
   let expectedProbeTypeId: number | undefined;
+  let tag: number | undefined;
+  let expectedKind = "";
+  let expectedValue = "";
+  let decodedField: DeviceDecodedField | undefined;
+  let expectedDecoded: Exclude<DeviceDecodedValue, undefined> | undefined;
   let json = false;
 
   for (let i = 1; i < args.length; i++) {
@@ -360,6 +513,21 @@ if (import.meta.main) {
         expectedProbeTypeId = id;
         break;
       }
+      case "--tag":
+        tag = parseTag(args[++i]);
+        break;
+      case "--expected-kind":
+        expectedKind = args[++i] ?? "";
+        break;
+      case "--expected-value":
+        expectedValue = args[++i] ?? "";
+        break;
+      case "--decoded-field":
+        decodedField = args[++i] as DeviceDecodedField | undefined;
+        break;
+      case "--expected-decoded":
+        expectedDecoded = parseDecodedValue(args[++i]);
+        break;
       case "--json":
         json = true;
         break;
@@ -368,7 +536,7 @@ if (import.meta.main) {
     }
   }
 
-  if (!beforePath || !afterPath || (args[0] === "assert" && !deviceName)) usage();
+  if (!beforePath || !afterPath || ((args[0] === "assert" || args[0] === "assert-device-field") && !deviceName)) usage();
 
   if (args[0] === "assert-connect") {
     const result = assertClientConnectMapping({ beforePath, afterPath });
@@ -394,6 +562,27 @@ if (import.meta.main) {
       console.log(`ok: client added device ${result.deviceId} (${JSON.stringify(result.deviceName)})`);
       console.log(`     probe-config ${result.probeId} type=${result.probeTypeId} -> service ${result.serviceId}${result.service ? ` (${JSON.stringify(result.service.name)})` : ""}`);
       console.log(`     enabled=${result.probeConfig.enabled} createdAt=${result.probeConfig.createdAt}`);
+    }
+    process.exit(0);
+  }
+
+  if (args[0] === "assert-device-field") {
+    if (tag === undefined || !expectedKind) usage();
+    const result = assertDeviceFieldMapping({
+      beforePath,
+      afterPath,
+      deviceName,
+      tag,
+      expectedAfter: parseExpectedValue(expectedKind, expectedValue),
+      decodedField,
+      expectedDecodedAfter: expectedDecoded,
+    });
+    if (json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(`ok: ${tagName(tag)} changed on object ${result.objectId} (${result.nameBefore ?? ""}${result.nameAfter && result.nameAfter !== result.nameBefore ? ` -> ${result.nameAfter}` : ""})`);
+      console.log(`     ${result.fieldKey}: ${JSON.stringify(result.beforeValue)} -> ${JSON.stringify(result.afterValue)}`);
+      if (result.decodedField) console.log(`     DudeDB.devices().${result.decodedField}: ${JSON.stringify(result.decodedAfter)}`);
     }
     process.exit(0);
   }

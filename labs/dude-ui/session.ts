@@ -12,6 +12,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { join } from "node:path";
 import { diffDudeDbFiles } from "../../src/index.ts";
 import { startQuickChrDude } from "../../test/helpers/quickchr-dude.ts";
+import { EVIDENCE_TARGETS, evaluateEvidenceTargets } from "./evidence.ts";
 import { assertProbeAddedMapping, assertRouterOsFlagMapping, FIRST_ROUTEROS_FLAG_DEVICE_PREFIX, PROBE_TARGET_DEVICE_PREFIX } from "./first-mapping.ts";
 
 interface Args {
@@ -22,6 +23,7 @@ interface Args {
   artifactDir: string;
   firstRouterOsFlag: boolean;
   addDeviceWithProbe: boolean;
+  evidenceTargetId?: string;
   deviceName: string;
   expectedRouterOs: boolean;
   expectedProbeTypeId?: number;
@@ -69,6 +71,10 @@ function parseArgs(argv: string[]): Args {
           out.deviceName = `${PROBE_TARGET_DEVICE_PREFIX}-${process.pid}`;
         }
         break;
+      case "--evidence-target":
+        out.evidenceTargetId = argv[++i];
+        if (!out.evidenceTargetId) throw new Error("--evidence-target requires a target id");
+        break;
       case "--expected-probe-type": {
         const value = argv[++i];
         const id = Number.parseInt(value ?? "", 10);
@@ -93,6 +99,7 @@ Usage:
   bun run labs/dude-ui/session.ts [--machine <name>] [--reuse] [--keep] [--drive-login]
                                    [--first-routeros-flag] [--device-name <name>]
                                    [--add-device-with-probe] [--expected-probe-type <id>]
+                                   [--evidence-target <target-id>]
 
 Flow:
   1. start/reuse QuickCHR with Dude + WinBox enabled
@@ -105,6 +112,10 @@ Probe mode (--add-device-with-probe):
   - skips RouterOS-CLI seeding; the dude.exe client itself adds the device + probe
   - artifacts: before-add-probe.export, after-add-probe.export, add-probe-diff.json
   - asserts donny decodes the new device + probe-config + service that the client wrote
+
+Evidence target mode (--evidence-target):
+  - uses labs/dude-ui/evidence.ts for artifact names, seed device name, and instructions
+  - run 'bun run lab:dude-ui:evidence' to list available target ids
 `);
         process.exit(0);
     }
@@ -115,8 +126,9 @@ Probe mode (--add-device-with-probe):
     out.reuse = true;
   }
 
-  if (out.firstRouterOsFlag && out.addDeviceWithProbe) {
-    throw new Error("--first-routeros-flag and --add-device-with-probe are separate evidence runs");
+  const selectedModes = [out.firstRouterOsFlag, out.addDeviceWithProbe, !!out.evidenceTargetId].filter(Boolean).length;
+  if (selectedModes > 1) {
+    throw new Error("--first-routeros-flag, --add-device-with-probe, and --evidence-target are separate evidence runs");
   }
 
   return out;
@@ -144,6 +156,16 @@ function routerOsQuote(value: string): string {
 const args = parseArgs(process.argv.slice(2));
 mkdirSync(args.artifactDir, { recursive: true });
 
+const evidenceTarget = args.evidenceTargetId
+  ? EVIDENCE_TARGETS.find((target) => target.id === args.evidenceTargetId)
+  : undefined;
+if (args.evidenceTargetId && !evidenceTarget) {
+  throw new Error(`unknown evidence target ${JSON.stringify(args.evidenceTargetId)}; run 'bun run lab:dude-ui:evidence' to list targets`);
+}
+if (evidenceTarget && !evidenceTarget.assertion) {
+  throw new Error(`evidence target ${evidenceTarget.id} has no replay assertion yet`);
+}
+
 const harness = await startQuickChrDude({
   machine: args.machine,
   existingMachine: args.reuse,
@@ -157,14 +179,28 @@ try {
   console.log(`Dude server: ${target.host}:${target.port}`);
   console.log(`Credentials: ${target.username} / <empty password>`);
 
-  const modePrefix = args.addDeviceWithProbe
+  const targetAssertion = evidenceTarget?.assertion;
+  const modePrefix = evidenceTarget
+    ? evidenceTarget.id
+    : args.addDeviceWithProbe
     ? "add-probe"
     : args.firstRouterOsFlag
       ? "routeros-flag"
       : "";
-  const beforePath = join(args.artifactDir, modePrefix ? `before-${modePrefix}.export` : "before.export");
-  const afterPath = join(args.artifactDir, modePrefix ? `after-${modePrefix}.export` : "after.export");
+  const beforePath = join(args.artifactDir, targetAssertion?.before ?? (modePrefix ? `before-${modePrefix}.export` : "before.export"));
+  const afterPath = join(args.artifactDir, targetAssertion?.after ?? (modePrefix ? `after-${modePrefix}.export` : "after.export"));
   const diffPath = join(args.artifactDir, modePrefix ? `${modePrefix}-diff.json` : "diff.json");
+
+  if (evidenceTarget) {
+    console.log(`Evidence target: ${evidenceTarget.id}`);
+    console.log(`Dude UI term: ${evidenceTarget.area} / ${evidenceTarget.dudeTerm}`);
+    console.log(`Expected mapping: ${evidenceTarget.nova}`);
+    if (evidenceTarget.instructions) console.log(`UI target: ${evidenceTarget.instructions}`);
+    if (targetAssertion?.seedDeviceName) {
+      console.log(`Seeding evidence target device: ${targetAssertion.seedDeviceName}`);
+      await harness.exec(`/dude/device/add name=${routerOsQuote(targetAssertion.seedDeviceName)}`);
+    }
+  }
 
   if (args.firstRouterOsFlag) {
     console.log(`Seeding first mapping target device: ${args.deviceName}`);
@@ -188,7 +224,7 @@ try {
   else console.log("Launch the client manually with: wine ~/.wine/drive_c/Program\\ Files\\ \\(x86\\)/dude/dude.exe");
 
   const rl = createInterface({ input, output });
-  await rl.question(args.addDeviceWithProbe
+  await rl.question(args.addDeviceWithProbe || evidenceTarget?.id === "device-add-with-ping-probe"
     ? "Add the device + probe in the Dude UI, save, then press Enter to export/diff... "
     : "Make one Dude UI change, save it, then press Enter to export/diff... ");
   rl.close();
@@ -218,6 +254,18 @@ try {
     });
     console.log(`Asserted client-added device ${result.deviceId} (${JSON.stringify(result.deviceName)})`);
     console.log(`  probe-config ${result.probeId} type=${result.probeTypeId} -> service ${result.serviceId}${result.service ? ` (${JSON.stringify(result.service.name)})` : ""}`);
+  }
+
+  if (evidenceTarget) {
+    const [result] = evaluateEvidenceTargets({
+      artifactDir: args.artifactDir,
+      targetId: evidenceTarget.id,
+    });
+    if (!result) throw new Error(`no evidence result for ${evidenceTarget.id}`);
+    if (result.status !== "grounded") {
+      throw new Error(`evidence target ${evidenceTarget.id} is ${result.status}: ${result.detail}`);
+    }
+    console.log(`Evidence grounded: ${result.detail}`);
   }
 
   console.log(`Diff written: ${diffPath}`);
