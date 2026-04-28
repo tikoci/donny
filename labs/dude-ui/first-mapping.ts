@@ -60,7 +60,7 @@ export interface ProbeAddedMappingResult {
   diff: DudeDbDiff;
 }
 
-type DeviceDecodedField = keyof Pick<Device, "name" | "address" | "username" | "password" | "routerOS" | "snmpEnabled" | "snmpProfileId" | "pollInterval">;
+type DeviceDecodedField = keyof Pick<Device, "name" | "address" | "username" | "password" | "enabled" | "routerOS" | "snmpEnabled" | "snmpProfileId" | "probeInterval" | "pollInterval" | "customField1" | "customField2" | "customField3">;
 
 type DeviceDecodedValue = string | number | boolean | undefined;
 

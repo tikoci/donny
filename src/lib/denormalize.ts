@@ -107,7 +107,7 @@ interface EncoderTable<TRow> {
   /** Normalized table name. */
   table: string;
   /** SELECT statement returning at minimum `id` and `_dirty` columns. */
-  select: string;
+  select: string | ((src: Database) => string);
   /** Build a Nova blob from a row. */
   encode: (row: TRow) => Uint8Array;
 }
@@ -118,9 +118,15 @@ interface DeviceRow {
   address: string;
   username: string | null;
   password: string | null;
+  enabled: number;
   router_os: number;
   snmp_enabled: number;
   snmp_profile_id: number | null;
+  probe_interval: number | null;
+  poll_interval: number | null;
+  custom_field1: string | null;
+  custom_field2: string | null;
+  custom_field3: string | null;
   _dirty: number;
 }
 interface ServiceRow {
@@ -163,7 +169,7 @@ interface TopologyLinkRow {
 const ENCODER_TABLES: EncoderTable<unknown>[] = [
   {
     table: "devices",
-    select: "SELECT id, name, address, username, password, router_os, snmp_enabled, snmp_profile_id, _dirty FROM devices",
+    select: deviceSelect,
     encode: (row) => {
       const r = row as DeviceRow;
       return encodeDevice({
@@ -172,9 +178,14 @@ const ENCODER_TABLES: EncoderTable<unknown>[] = [
         address: r.address,
         username: r.username ?? "",
         password: r.password ?? "",
+        enabled: !!r.enabled,
         routerOS: !!r.router_os,
         snmpEnabled: !!r.snmp_enabled,
         snmpProfileId: r.snmp_profile_id ?? 0xffffffff,
+        probeInterval: r.probe_interval ?? r.poll_interval ?? undefined,
+        customField1: r.custom_field1 ?? "",
+        customField2: r.custom_field2 ?? "",
+        customField3: r.custom_field3 ?? "",
       });
     },
   },
@@ -235,6 +246,33 @@ const ENCODER_TABLES: EncoderTable<unknown>[] = [
     },
   },
 ];
+
+function tableColumns(db: Database, table: string): Set<string> {
+  return new Set(
+    db.query<{ name: string }, [string]>("SELECT name FROM pragma_table_info(?)")
+      .all(table)
+      .map((row) => row.name),
+  );
+}
+
+function columnExpr(columns: Set<string>, column: string, fallbackSql: string): string {
+  return columns.has(column) ? column : `${fallbackSql} AS ${column}`;
+}
+
+function deviceSelect(src: Database): string {
+  const columns = tableColumns(src, "devices");
+  return [
+    "SELECT id, name, address, username, password",
+    columnExpr(columns, "enabled", "1"),
+    "router_os, snmp_enabled, snmp_profile_id",
+    columnExpr(columns, "probe_interval", columns.has("poll_interval") ? "poll_interval" : "NULL"),
+    columnExpr(columns, "poll_interval", columns.has("probe_interval") ? "probe_interval" : "NULL"),
+    columnExpr(columns, "custom_field1", "NULL"),
+    columnExpr(columns, "custom_field2", "NULL"),
+    columnExpr(columns, "custom_field3", "NULL"),
+    "_dirty FROM devices",
+  ].join(", ");
+}
 
 // Detect the Nova range of a raw blob, for gap reporting. Heuristic scan
 // (no full decode) — adequate for surfacing which Nova types still need
@@ -342,7 +380,8 @@ export function denormalize(
 
     // 1. Walk encoder-backed normalized tables.
     for (const enc of ENCODER_TABLES) {
-      const stmt = src.query<{ id: number; _dirty: number } & Record<string, unknown>, []>(enc.select);
+      const select = typeof enc.select === "function" ? enc.select(src) : enc.select;
+      const stmt = src.query<{ id: number; _dirty: number } & Record<string, unknown>, []>(select);
       for (const row of stmt.iterate()) {
         const id = row.id;
         if (handledIds.has(id)) continue;

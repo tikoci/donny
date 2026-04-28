@@ -27,10 +27,21 @@ export interface Device {
   username?: string;
   /** RouterOS admin password — stored plaintext in dude.db. */
   password?: string;
+  /** Device Settings > Polling > Enabled. */
+  enabled: boolean;
   routerOS: boolean;
   snmpEnabled: boolean;
   snmpProfileId?: number;
+  /** Device Settings > Polling > Probe interval, in seconds. */
+  probeInterval?: number;
+  /** @deprecated Use probeInterval, matching the Dude UI label. */
   pollInterval?: number;
+  /** Device Settings > General > Custom Fields > CustomField1. */
+  customField1?: string;
+  /** Device Settings > General > Custom Fields > CustomField2. */
+  customField2?: string;
+  /** Device Settings > General > Custom Fields > CustomField3. */
+  customField3?: string;
   /** Device type object ID (refs DeviceType). 0xFFFFFFFF sentinel surfaces as undefined. */
   deviceTypeId?: number;
   /** Colon-separated MAC addresses observed on this device. */
@@ -44,9 +55,17 @@ export interface AddDeviceOptions {
   address: string;
   username?: string;
   password?: string;
+  enabled?: boolean;
   routerOS?: boolean;
   snmpEnabled?: boolean;
   snmpProfileId?: number;
+  /** Device Settings > Polling > Probe interval, in seconds. */
+  probeInterval?: number;
+  /** @deprecated Use probeInterval, matching the Dude UI label. */
+  pollInterval?: number;
+  customField1?: string;
+  customField2?: string;
+  customField3?: string;
   /** Probe type IDs to attach. Defaults to ping (10160) if omitted. */
   probeTypeIds?: number[];
 }
@@ -182,4 +201,3 @@ export interface DiscoverJob {
   probeTemplateIds: number[];
   enabled: boolean;
 }
-

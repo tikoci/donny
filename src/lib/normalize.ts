@@ -139,11 +139,17 @@ CREATE TABLE devices (
   dns_mode        INTEGER NOT NULL DEFAULT 0,
   username        TEXT,
   password        TEXT,
+  enabled         INTEGER NOT NULL DEFAULT 1,
   router_os       INTEGER NOT NULL DEFAULT 0,
   snmp_enabled    INTEGER NOT NULL DEFAULT 0,
   snmp_profile_id INTEGER REFERENCES snmp_profiles(id),
+  probe_interval  INTEGER,
+  -- Deprecated compatibility alias for earlier donny snapshots.
   poll_interval   INTEGER,
   device_type_id  INTEGER REFERENCES device_types(id),
+  custom_field1   TEXT,
+  custom_field2   TEXT,
+  custom_field3   TEXT,
   _dirty          INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_devices_name    ON devices(name);
@@ -321,8 +327,8 @@ CREATE TABLE chart_1day (
 -- Convenience views ---------------------------------------------------------
 CREATE VIEW v_devices_full AS
   SELECT
-    d.id, d.name, d.address, d.dns_mode, d.router_os, d.snmp_enabled,
-    d.poll_interval,
+    d.id, d.name, d.address, d.dns_mode, d.enabled, d.router_os, d.snmp_enabled,
+    d.probe_interval, d.poll_interval, d.custom_field1, d.custom_field2, d.custom_field3,
     dt.name AS device_type, sp.name AS snmp_profile,
     (SELECT GROUP_CONCAT(mac, ',') FROM device_macs WHERE device_id = d.id) AS macs
   FROM devices d
@@ -607,7 +613,7 @@ export function normalize(
     // --- Devices and dependents -------------------------------------------
     // Devices need device_types, snmp_profiles in place — they are now.
     const insDevice = dst.prepare(
-      "INSERT INTO devices (id, name, address, dns_mode, username, password, router_os, snmp_enabled, snmp_profile_id, poll_interval, device_type_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO devices (id, name, address, dns_mode, username, password, enabled, router_os, snmp_enabled, snmp_profile_id, probe_interval, poll_interval, device_type_id, custom_field1, custom_field2, custom_field3) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
     const insMac = dst.prepare(
       "INSERT OR IGNORE INTO device_macs (device_id, mac) VALUES (?, ?)",
@@ -628,9 +634,12 @@ export function normalize(
         d.id, d.name, d.address,
         d.address === d.name && d.address.includes(".") && !/^\d+\.\d+\.\d+\.\d+$/.test(d.address) ? 1 : 0,
         d.username ?? null, d.password ?? null,
+        d.enabled ? 1 : 0,
         d.routerOS ? 1 : 0, d.snmpEnabled ? 1 : 0,
-        snmpId, d.pollInterval ?? null,
+        snmpId, d.probeInterval ?? d.pollInterval ?? null,
+        d.probeInterval ?? d.pollInterval ?? null,
         dtId,
+        d.customField1 ?? null, d.customField2 ?? null, d.customField3 ?? null,
       );
       for (const m of d.macs) {
         insMac.run(d.id, m);
@@ -791,7 +800,7 @@ export function normalize(
     const insCount = dst.prepare("INSERT INTO _table_counts (table_name, row_count) VALUES (?, ?)");
     insMeta.run("source_path", options.sourcePath ?? "");
     insMeta.run("generated_at", new Date().toISOString());
-    insMeta.run("schema_version", "2");
+    insMeta.run("schema_version", "3");
     insMeta.run("generator", "@tikoci/donny normalize");
     for (const [tbl, n] of Object.entries(counts)) insCount.run(tbl, n);
   })();

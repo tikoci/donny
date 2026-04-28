@@ -221,17 +221,23 @@ export class DudeDB {
       const rawDtId = getU32(msg, TAG.DEVICE_TYPE_ID);
       const deviceTypeId = rawDtId === undefined || rawDtId === 0xffffffff ? undefined : rawDtId;
 
+      const probeInterval = getU32(msg, TAG.DEVICE_POLL_INTERVAL);
       out.push({
         id,
         name,
         address,
         username: getStr(msg, TAG.DEVICE_USERNAME) || undefined,
         password: getStr(msg, TAG.DEVICE_PASSWORD) || undefined,
+        enabled: getBool(msg, TAG.DEVICE_ENABLED) ?? true,
         routerOS: getBool(msg, TAG.DEVICE_ROUTER_OS) ?? false,
         snmpEnabled: getBool(msg, TAG.DEVICE_SNMP_ENABLED) ?? false,
         snmpProfileId: getU32(msg, TAG.DEVICE_SNMP_PROFILE),
-        pollInterval: getU32(msg, TAG.DEVICE_POLL_INTERVAL),
+        probeInterval,
+        pollInterval: probeInterval,
         deviceTypeId,
+        customField1: getStr(msg, TAG.DEVICE_CUSTOM_FIELD1) || undefined,
+        customField2: getStr(msg, TAG.DEVICE_CUSTOM_FIELD2) || undefined,
+        customField3: getStr(msg, TAG.DEVICE_CUSTOM_FIELD3) || undefined,
         macs,
       });
     }

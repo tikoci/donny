@@ -253,9 +253,18 @@ describe("denormalize() — editable round-trip via encoders", () => {
     src.close();
     ndb.close();
 
-    // Edit: rename + mark dirty.
+    // Edit: rename + Dude-UI-aligned fields + mark dirty.
     const edit = new Database(normPath);
-    edit.exec(`UPDATE devices SET name = 'router1-renamed', _dirty = 1 WHERE id = ${devId}`);
+    edit.exec(`UPDATE devices SET
+      name = 'router1-renamed',
+      enabled = 0,
+      probe_interval = 120,
+      poll_interval = 120,
+      custom_field1 = 'rack-a',
+      custom_field2 = 'row-7',
+      custom_field3 = 'owner-netops',
+      _dirty = 1
+      WHERE id = ${devId}`);
     edit.close();
 
     const result = denormalizeToFile(normPath, backPath);
@@ -267,6 +276,12 @@ describe("denormalize() — editable round-trip via encoders", () => {
       expect(dev).toBeDefined();
       expect(dev?.name).toBe("router1-renamed");
       expect(dev?.address).toBe("10.0.0.1");
+      expect(dev?.enabled).toBe(false);
+      expect(dev?.probeInterval).toBe(120);
+      expect(dev?.pollInterval).toBe(120);
+      expect(dev?.customField1).toBe("rack-a");
+      expect(dev?.customField2).toBe("row-7");
+      expect(dev?.customField3).toBe("owner-netops");
     } finally { back.close(); }
   });
 

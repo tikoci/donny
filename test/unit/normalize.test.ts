@@ -99,7 +99,7 @@ describe("normalize(clean.db)", () => {
     const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
     expect(map.source_path).toBe(CLEAN_DB_PATH);
     expect(map.generated_at).toMatch(/^\d{4}-/);
-    expect(map.schema_version).toBe("2");
+    expect(map.schema_version).toBe("3");
     db.close();
   });
 
@@ -159,7 +159,16 @@ describe("normalize() round-trip via DudeDB.addDevice()", () => {
     // Need at least one probe template so addDevice can find ping (10160).
     // inMemory() creates an empty schema — addDevice will use "probe" as
     // the template name fallback. That's fine for round-trip testing.
-    const ids = src.addDevice({ name: "edge-rt", address: "10.0.0.42", routerOS: true });
+    const ids = src.addDevice({
+      name: "edge-rt",
+      address: "10.0.0.42",
+      routerOS: true,
+      enabled: false,
+      probeInterval: 120,
+      customField1: "rack-a",
+      customField2: "row-7",
+      customField3: "owner-netops",
+    });
 
     const dstPath = join(tmpDir, "rt.db");
     const dst = new Database(dstPath);
@@ -168,13 +177,30 @@ describe("normalize() round-trip via DudeDB.addDevice()", () => {
     dst.close();
 
     const out = new Database(dstPath, { readonly: true });
-    const dev = out.query<{ id: number; name: string; address: string; router_os: number }, []>(
-      "SELECT id, name, address, router_os FROM devices",
+    const dev = out.query<{
+      id: number;
+      name: string;
+      address: string;
+      enabled: number;
+      router_os: number;
+      probe_interval: number;
+      poll_interval: number;
+      custom_field1: string;
+      custom_field2: string;
+      custom_field3: string;
+    }, []>(
+      "SELECT id, name, address, enabled, router_os, probe_interval, poll_interval, custom_field1, custom_field2, custom_field3 FROM devices",
     ).get();
     expect(dev?.id).toBe(ids.deviceId);
     expect(dev?.name).toBe("edge-rt");
     expect(dev?.address).toBe("10.0.0.42");
+    expect(dev?.enabled).toBe(0);
     expect(dev?.router_os).toBe(1);
+    expect(dev?.probe_interval).toBe(120);
+    expect(dev?.poll_interval).toBe(120);
+    expect(dev?.custom_field1).toBe("rack-a");
+    expect(dev?.custom_field2).toBe("row-7");
+    expect(dev?.custom_field3).toBe("owner-netops");
 
     expect(rowCount(out, "services")).toBe(1);
     // probe_configs requires the referenced probe_template to exist; the

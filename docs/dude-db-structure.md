@@ -161,18 +161,22 @@ Root is always named `"default"` (ID ~10016). Children: `Vera.ttf`,
 | `0x1F40` | primary_address | u32_array | IPv4 address(es) LE; empty = DNS mode |
 | `0x1F41` | interface_list | compound | Present even in DNS-mode devices |
 | `0x1F42` | dns_lookup_mode | u8 | 0 or 1 |
-| `0x1F43` | poll_interval | u8 | Seconds |
-| `0x1F45` | device_type_id | u8 | |
+| `0x1F43` | probe_interval | u8 | Seconds; Dude UI label is "Probe interval" |
+| `0x1F44` | mac_addresses | bytes | Packed MAC data |
+| `0x1F45` | mac_lookup | u8/bool-ish | 0=off, 1=on |
 | `0x1F49` | enabled | bool | |
 | `0x1F4A` | router_os | bool | |
 | `0x1F4B` | snmp_enabled | bool | |
-| `0x1F4C` | snmp_profile_id | u32 | `0xFFFFFFFF` = none |
-| `0x1F4D` | custom_field_ref | u8 | |
-| `0x1F4E` | custom2 | u32 | |
+| `0x1F4C` | device_type_id | u32 | `0xFFFFFFFF` = none |
+| `0x1F4D` | agent_id | u32 | `0xFFFFFFFF` = none |
+| `0x1F4E` | snmp_profile_id | u32 | `0xFFFFFFFF` = none |
 | `0x1F51` | secure_mode | bool | |
 | `0x1F55` | flag_55 | bool | |
 | `0x1F56` | services_ids | u32_array | Always empty — use probe_config instead |
 | `0x1F57` | reserved_57 | u32_array | Always empty |
+| `0x1F58` | custom_field1 | str | Dude UI CustomField1 |
+| `0x1F59` | custom_field2 | str | Dude UI CustomField2 |
+| `0x1F5A` | custom_field3 | str | Dude UI CustomField3 |
 
 ### Section 2 (after `0x0001` separator)
 

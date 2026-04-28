@@ -29,7 +29,7 @@ most Dude UI fields are not yet grounded by client-written before/after exports.
 | Device | credentials (`TAG.DEVICE_USERNAME`, `TAG.DEVICE_PASSWORD`) | Replay assertion target | `--evidence-target device-username` and `--evidence-target device-password`; use non-secret dummy values only. |
 | Device | polling enabled/interval | Replay assertion target | `--evidence-target device-enabled` and `--evidence-target device-probe-interval`; `DEVICE_ENABLED` is still not exposed in `Device`. |
 | Device | SNMP enabled | Replay assertion target | `--evidence-target device-snmp-enabled`; profile object selection remains future work. |
-| Device | custom fields (`0x1f58`, `0x1f59`, `TAG.DEVICE_CUSTOM_FIELD`) | Replay assertion target | `--evidence-target device-custom-field-1/2/3`; likely tag naming mismatch with current `DEVICE_NOTES`/`DEVICE_LABEL` names, pending live evidence. |
+| Device | custom fields (`TAG.DEVICE_CUSTOM_FIELD1/2/3`, `0x1f58–0x1f5a`) | Replay assertion target | `--evidence-target device-custom-field-1/2/3`; normalized columns and domain fields now follow the Dude UI names, with old tag names retained as deprecated aliases. |
 | Device | agent assignment | planned | GUI-only known gap; `/dude/agent/add` is limited/not implemented in RouterOS CLI. |
 | Map | node placement | planned | Requires reliable map interaction or protocol automation. |
 | Protocol | client-to-server messages | Research sidecar | Capture loopback WinBox/Dude traffic and search for Nova magic. |

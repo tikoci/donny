@@ -58,8 +58,14 @@ export const TAG = {
   DEVICE_SIZE: 0x1f54,
   DEVICE_INHERIT_PROBES: 0x1f55,
   DEVICE_EXTRA_SERVICES: 0x1f57,
+  DEVICE_CUSTOM_FIELD1: 0x1f58,
+  DEVICE_CUSTOM_FIELD2: 0x1f59,
+  DEVICE_CUSTOM_FIELD3: 0x1f5a,
+  /** @deprecated Dude UI term is CustomField1. */
   DEVICE_NOTES: 0x1f58,
+  /** @deprecated Dude UI term is CustomField2. */
   DEVICE_LABEL: 0x1f59,
+  /** @deprecated Dude UI term is CustomField3. */
   DEVICE_CUSTOM_FIELD: 0x1f5a,
   DEVICE_SERVICES: 0x1f56,
   // Device type template (0x2710–0x271F) — 17 built-in types (Bridge, Router, etc.)
@@ -609,11 +615,32 @@ export function encodeDevice(opts: {
   address: string;
   username?: string;
   password?: string;
+  enabled?: boolean;
   routerOS?: boolean;
   snmpEnabled?: boolean;
   snmpProfileId?: number;
+  probeInterval?: number;
+  /** @deprecated Use probeInterval, matching the Dude UI label. */
+  pollInterval?: number;
+  customField1?: string;
+  customField2?: string;
+  customField3?: string;
 }): Uint8Array {
-  const { id, name, address, username = "", password = "", routerOS = false, snmpEnabled = false, snmpProfileId = 0xffffffff } = opts;
+  const {
+    id,
+    name,
+    address,
+    username = "",
+    password = "",
+    enabled = true,
+    routerOS = false,
+    snmpEnabled = false,
+    snmpProfileId = 0xffffffff,
+    customField1 = "",
+    customField2 = "",
+    customField3 = "",
+  } = opts;
+  const probeInterval = opts.probeInterval ?? opts.pollInterval ?? 60;
 
   const isDns = !/^\d{1,3}(\.\d{1,3}){3}$/.test(address);
   const ipArr = isDns ? [] : [ipv4ToU32(address)];
@@ -624,13 +651,13 @@ export function encodeDevice(opts: {
   s1.addU32Array(TAG.DEVICE_SERVICES, [], M_STD);
   s1.addStringArray(TAG.DEVICE_DNS_NAMES, [], M_STD);
   s1.addU32Array(TAG.DEVICE_IP, ipArr, M_STD); // primary_address
-  s1.addBool(TAG.DEVICE_ENABLED, true);
+  s1.addBool(TAG.DEVICE_ENABLED, enabled);
   s1.addBool(TAG.DEVICE_ROUTER_OS, routerOS);
   s1.addBool(TAG.DEVICE_SNMP_ENABLED, snmpEnabled);
   s1.addBool(0x1f55, false); // flag_55
   s1.addBool(TAG.DEVICE_AUTO_DISCOVER, true);
   s1.addU8(TAG.DEVICE_LOOKUP, 0);
-  s1.addU8(TAG.DEVICE_POLL_INTERVAL, 60);
+  s1.addU8(TAG.DEVICE_POLL_INTERVAL, probeInterval);
   s1.addU8(TAG.DEVICE_MAC_LOOKUP, 1);
   s1.addU32(TAG.DEVICE_TYPE_ID, 0xffffffff);
   s1.addU32(TAG.DEVICE_AGENT_ID, 0xffffffff);
@@ -644,9 +671,9 @@ export function encodeDevice(opts: {
   s2.addU8(0x1f52, 0);
   s2.addU8(0x1f53, 0);
   s2.addU8(0x1f54, 0);
-  s2.addStr(0x1f5a, ""); // custom_str_3
-  s2.addStr(0x1f59, ""); // custom_str_2
-  s2.addStr(0x1f58, ""); // custom_str_1
+  s2.addStr(TAG.DEVICE_CUSTOM_FIELD3, customField3);
+  s2.addStr(TAG.DEVICE_CUSTOM_FIELD2, customField2);
+  s2.addStr(TAG.DEVICE_CUSTOM_FIELD1, customField1);
   s2.addStr(TAG.DEVICE_PASSWORD, password);
   s2.addStr(TAG.DEVICE_USERNAME, username);
   s2.addBytes(TAG.DEVICE_MAC, new Uint8Array());

@@ -44,7 +44,7 @@ Every normalized DB carries two metadata tables:
 | `source_path`     | Absolute path of the input file               |
 | `generated_at`    | ISO-8601 UTC timestamp of the export          |
 | `generator`       | `@tikoci/donny normalize`                     |
-| `schema_version`  | Integer; bumped when the schema breaks        |
+| `schema_version`  | Integer; bumped when the schema changes       |
 
 `_table_counts(table_name, row_count)` mirrors what `result.tables` returns
 from the API.
@@ -69,7 +69,7 @@ from the API.
 
 | Table                | Source tag range  | Notes |
 | -------------------- | ----------------- | ----- |
-| `devices`            | `0x1F40–0x1FA3`   | `dns_mode=1` when address is a DNS name (no IPv4 in record); RouterOS-created DNS devices store the hostname in `NAME` and an empty `Device_DnsNames` string array; `device_type_id` references `device_types(id)` — devices with the 0xFFFFFFFF "no type" sentinel are stored as NULL |
+| `devices`            | `0x1F40–0x1FA3`   | Column names follow Dude Device Settings labels where possible: `enabled`, `probe_interval`, `custom_field1`, `custom_field2`, `custom_field3`; `poll_interval` is kept as a deprecated compatibility alias for `probe_interval`; `dns_mode=1` when address is a DNS name (no IPv4 in record); RouterOS-created DNS devices store the hostname in `NAME` and an empty `Device_DnsNames` string array; `device_type_id` references `device_types(id)` — devices with the 0xFFFFFFFF "no type" sentinel are stored as NULL |
 | `device_macs`        | continuation      | Junction: a device may have multiple MACs (RouterOS-discovered) |
 | `services`           | `0xBF68–0xBF71`   | Dude DataSource/time-series anchor objects; `unit` defaults to `'s'` (seconds, latency); `enabled=0` for disabled anchors |
 | `probe_configs`      | `0x2EE0–0x2EF4`   | Dude Service objects: the actual "device X uses probe Y reporting service Z" rows |
@@ -123,6 +123,20 @@ names `probe_configs` for the per-device service assignment and `services`
 for the time-series/data-source anchor because those names are easier to use
 in SQL queries and match the public `DudeDB.services()` API.
 
+Device columns intentionally follow the Dude client labels rather than older
+internal guesses:
+
+| Dude UI label | Normalized column | Nova tag |
+| ------------- | ----------------- | -------- |
+| Enabled | `enabled` | `0x1F49` |
+| Probe interval | `probe_interval` | `0x1F43` |
+| CustomField1 | `custom_field1` | `0x1F58` |
+| CustomField2 | `custom_field2` | `0x1F59` |
+| CustomField3 | `custom_field3` | `0x1F5A` |
+
+`poll_interval` remains in the `devices` table for compatibility with earlier
+normalized exports, but new queries should prefer `probe_interval`.
+
 ## Views
 
 | View              | Joins                                             |
@@ -143,6 +157,17 @@ JOIN probe_configs p ON p.device_id = d.id
 JOIN probe_templates t ON t.id = p.probe_type_id
 WHERE d.router_os = 1 AND lower(t.name) LIKE '%ping%'
 ORDER BY d.name;
+```
+
+### Devices with custom field inventory values
+
+```sql
+SELECT name, custom_field1 AS location, custom_field2 AS asset_tag, custom_field3 AS owner
+FROM devices
+WHERE custom_field1 IS NOT NULL
+   OR custom_field2 IS NOT NULL
+   OR custom_field3 IS NOT NULL
+ORDER BY name;
 ```
 
 ### Top 20 devices by outage count
@@ -251,7 +276,7 @@ ORDER BY o.time DESC;
   the `info`/`history` panel buffers) is intentionally not normalized.
 - **SNMP credentials and notification action templates** are summarized
   (name, version, port, type) — secrets are not exported.
-- **Schema version is `2`.** Future breaking changes will bump it; check
+- **Schema version is `3`.** Future breaking changes will bump it; check
   `_meta.schema_version` when consuming the export programmatically.
 
 ## Round-trip / Restoring a `dude.db` (editable)
